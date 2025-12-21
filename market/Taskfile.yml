@@ -1,0 +1,22 @@
+version: '3'
+
+tasks:
+  market:tidy:
+    cmds:
+      - go mod tidy
+    silent: true
+  market:wire:
+    cmds:
+      - wire ./internal
+    silent: true
+  market:test:
+    cmds:
+      - go test ./... -cover
+    silent: true
+  market:run:
+    deps:
+      - market:tidy
+      - market:wire
+    cmds:
+      - go run cmd/market/main.go
+    silent: true

@@ -1,0 +1,297 @@
+syntax = "proto3";
+
+package market.v1;
+
+option go_package = "proto/gen/v1/market;marketv1";
+
+// Plugin status
+enum PluginStatus {
+    PLUGIN_STATUS_UNKNOWN = 0;
+    PLUGIN_STATUS_ACTIVE   = 1;
+    PLUGIN_STATUS_HIDDEN   = 2;
+    PLUGIN_STATUS_BLOCKED  = 3;
+}
+
+// Trust status
+enum TrustStatus {
+    TRUST_STATUS_UNKNOWN    = 0;
+    TRUST_STATUS_OFFICIAL   = 1;
+    TRUST_STATUS_VERIFIED   = 2;
+    TRUST_STATUS_COMMUNITY  = 3;
+}
+
+// Publisher
+message Publisher {
+    int64  id          = 1;
+    string name        = 2;
+    string description = 3;
+    string website_url = 4;
+    string created_at  = 5;
+    string updated_at  = 6;
+}
+
+// Plugin
+message Plugin {
+    int64        id           = 1;
+    string       identifier   = 2;
+    string       name         = 3;
+    string       description  = 4;
+    string       category     = 5;
+    int64        publisher_id = 6;
+    PluginStatus status       = 7;
+    TrustStatus  trust_status = 8;
+    string       source_url   = 9;
+    string       docs_url     = 10;
+    string       created_at   = 11;
+    string       updated_at   = 12;
+}
+
+// Release
+message Release {
+    int64    id              = 1;
+    int64    plugin_id       = 2;
+    string   version         = 3;
+    string   published_at    = 4;
+    string   changelog       = 5;
+    string   min_cli_version = 6;
+    string   min_k8s_version = 7;
+    bool     is_latest       = 8;
+    string   created_at      = 9;
+    string   updated_at      = 10;
+}
+
+// Artifact
+message Artifact {
+    int64  id           = 1;
+    int64  release_id   = 2;
+    string os           = 3;
+    string arch         = 4;
+    string type         = 5;
+    int64  size         = 6;
+    string checksum     = 7;
+    string storage_path = 8;
+    string signature    = 9;
+    string key_id       = 10;
+    string created_at   = 11;
+}
+
+// Plugin Service
+service PluginService {
+    // Plugin management
+    rpc CreatePlugin(CreatePluginRequest) returns (CreatePluginResponse);
+    rpc GetPlugin(GetPluginRequest) returns (GetPluginResponse);
+    rpc ListPlugins(ListPluginsRequest) returns (ListPluginsResponse);
+    rpc UpdatePlugin(UpdatePluginRequest) returns (UpdatePluginResponse);
+    rpc UpdatePluginStatus(UpdatePluginStatusRequest) returns (UpdatePluginStatusResponse);
+    
+    // Release management
+    rpc CreateRelease(CreateReleaseRequest) returns (CreateReleaseResponse);
+    rpc GetRelease(GetReleaseRequest) returns (GetReleaseResponse);
+    rpc ListReleases(ListReleasesRequest) returns (ListReleasesResponse);
+    rpc GetLatestRelease(GetLatestReleaseRequest) returns (GetLatestReleaseResponse);
+    
+    // Artifact management
+    rpc UploadArtifact(stream UploadArtifactRequest) returns (UploadArtifactResponse);
+    rpc GetArtifact(GetArtifactRequest) returns (GetArtifactResponse);
+    rpc GetArtifactByPlatform(GetArtifactByPlatformRequest) returns (GetArtifactResponse);
+    rpc ListArtifacts(ListArtifactsRequest) returns (ListArtifactsResponse);
+    rpc DownloadArtifact(DownloadArtifactRequest) returns (stream DownloadArtifactResponse);
+    rpc DeleteArtifact(DeleteArtifactRequest) returns (DeleteArtifactResponse);
+}
+
+// Plugin requests/responses
+message CreatePluginRequest {
+    string       identifier   = 1;
+    string       name         = 2;
+    string       description  = 3;
+    string       category     = 4;
+    int64        publisher_id = 5;
+    TrustStatus  trust_status = 6;
+    string       source_url   = 7;
+    string       docs_url     = 8;
+}
+
+message CreatePluginResponse {
+    Plugin plugin = 1;
+}
+
+message GetPluginRequest {
+    int64 id = 1;
+}
+
+message GetPluginResponse {
+    Plugin plugin = 1;
+}
+
+message ListPluginsRequest {
+    string       name         = 1;
+    string       category     = 2;
+    int64        publisher_id = 3;
+    TrustStatus  trust_status = 4;
+    PluginStatus status       = 5;
+    int32        limit         = 6;
+    int32        offset       = 7;
+}
+
+message ListPluginsResponse {
+    repeated Plugin plugins = 1;
+    int64           total   = 2;
+}
+
+message UpdatePluginRequest {
+    int64  id          = 1;
+    string name        = 2;
+    string description = 3;
+    string category    = 4;
+    string source_url  = 5;
+    string docs_url    = 6;
+}
+
+message UpdatePluginResponse {
+    Plugin plugin = 1;
+}
+
+message UpdatePluginStatusRequest {
+    int64        id     = 1;
+    PluginStatus status = 2;
+    string       reason = 3;
+}
+
+message UpdatePluginStatusResponse {
+}
+
+// Release requests/responses
+message CreateReleaseRequest {
+    int64  plugin_id       = 1;
+    string version         = 2;
+    string changelog       = 3;
+    string min_cli_version = 4;
+    string min_k8s_version = 5;
+    bool   is_latest       = 6;
+}
+
+message CreateReleaseResponse {
+    Release release = 1;
+}
+
+message GetReleaseRequest {
+    int64 id = 1;
+}
+
+message GetReleaseResponse {
+    Release release = 1;
+}
+
+message ListReleasesRequest {
+    int64 plugin_id = 1;
+    int32 limit     = 2;
+    int32 offset    = 3;
+}
+
+message ListReleasesResponse {
+    repeated Release releases = 1;
+    int64            total    = 2;
+}
+
+message GetLatestReleaseRequest {
+    int64 plugin_id = 1;
+}
+
+message GetLatestReleaseResponse {
+    Release release = 1;
+}
+
+// Artifact requests/responses
+message UploadArtifactRequest {
+    oneof data {
+        ArtifactMetadata metadata = 1;
+        bytes            chunk    = 2;
+    }
+}
+
+message ArtifactMetadata {
+    int64  release_id = 1;
+    string os         = 2;
+    string arch       = 3;
+    string type       = 4;
+    string signature  = 5;
+    string key_id     = 6;
+}
+
+message UploadArtifactResponse {
+    Artifact artifact = 1;
+}
+
+message GetArtifactRequest {
+    int64 id = 1;
+}
+
+message GetArtifactResponse {
+    Artifact artifact = 1;
+}
+
+message GetArtifactByPlatformRequest {
+    int64  release_id = 1;
+    string os         = 2;
+    string arch       = 3;
+}
+
+message ListArtifactsRequest {
+    int64 release_id = 1;
+}
+
+message ListArtifactsResponse {
+    repeated Artifact artifacts = 1;
+}
+
+message DownloadArtifactRequest {
+    int64 id = 1;
+}
+
+message DownloadArtifactResponse {
+    bytes chunk = 1;
+}
+
+message DeleteArtifactRequest {
+    int64  id     = 1;
+    string reason = 2;
+}
+
+message DeleteArtifactResponse {
+}
+
+// Publisher Service
+service PublisherService {
+    rpc CreatePublisher(CreatePublisherRequest) returns (CreatePublisherResponse);
+    rpc GetPublisher(GetPublisherRequest) returns (GetPublisherResponse);
+    rpc ListPublishers(ListPublishersRequest) returns (ListPublishersResponse);
+}
+
+message CreatePublisherRequest {
+    string name        = 1;
+    string description = 2;
+    string website_url = 3;
+}
+
+message CreatePublisherResponse {
+    Publisher publisher = 1;
+}
+
+message GetPublisherRequest {
+    int64 id = 1;
+}
+
+message GetPublisherResponse {
+    Publisher publisher = 1;
+}
+
+message ListPublishersRequest {
+    int32 limit  = 1;
+    int32 offset = 2;
+}
+
+message ListPublishersResponse {
+    repeated Publisher publishers = 1;
+    int64             total       = 2;
+}
+
