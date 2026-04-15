@@ -3,10 +3,15 @@ package plugin
 import (
 	"context"
 	"fmt"
+	"log"
 
 	appplugin "k8s-manager/market/internal/application/plugin"
 	domainplugin "k8s-manager/market/internal/domain/plugin"
+	"k8s-manager/market/internal/presentation/grpc/auth"
 	marketv1 "k8s-manager/proto/gen/v1/market"
+
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 )
 
 // Handler implements the gRPC PluginService
@@ -59,6 +64,13 @@ func (h *Handler) GetPlugin(ctx context.Context, req *marketv1.GetPluginRequest)
 
 // ListPlugins handles ListPlugins gRPC request
 func (h *Handler) ListPlugins(ctx context.Context, req *marketv1.ListPluginsRequest) (*marketv1.ListPluginsResponse, error) {
+	claims, ok := auth.GetClaims(ctx)
+	if !ok {
+		return nil, status.Error(codes.Unauthenticated, "no claims")
+	}
+
+	log.Printf("userID=%s email=%s roles=%v", claims.UserID, claims.Email, claims.Roles)
+
 	listReq := &appplugin.ListPluginsRequest{
 		Name:        req.Name,
 		Category:    req.Category,
@@ -123,7 +135,7 @@ func (h *Handler) CreateRelease(ctx context.Context, req *marketv1.CreateRelease
 		Version:       req.Version,
 		Changelog:     req.Changelog,
 		MinCLIVersion: req.MinCliVersion,
-		MinK8sVersion: req.MinK8sVersion,
+		MinK8sVersion: req.MinK8SVersion,
 		IsLatest:      req.IsLatest,
 	}
 
@@ -182,18 +194,18 @@ func (h *Handler) GetLatestRelease(ctx context.Context, req *marketv1.GetLatestR
 // Helper functions to convert domain models to proto
 func toProtoPlugin(p *domainplugin.Plugin) *marketv1.Plugin {
 	return &marketv1.Plugin{
-		Id:           p.ID,
-		Identifier:   p.Identifier,
-		Name:         p.Name,
-		Description:  p.Description,
-		Category:     p.Category,
-		PublisherId:  p.PublisherID,
-		Status:       toProtoPluginStatus(p.Status),
-		TrustStatus:  toProtoTrustStatus(p.TrustStatus),
-		SourceUrl:    p.SourceURL,
-		DocsUrl:      p.DocsURL,
-		CreatedAt:    p.CreatedAt.Format("2006-01-02T15:04:05Z07:00"),
-		UpdatedAt:    p.UpdatedAt.Format("2006-01-02T15:04:05Z07:00"),
+		Id:          p.ID,
+		Identifier:  p.Identifier,
+		Name:        p.Name,
+		Description: p.Description,
+		Category:    p.Category,
+		PublisherId: p.PublisherID,
+		Status:      toProtoPluginStatus(p.Status),
+		TrustStatus: toProtoTrustStatus(p.TrustStatus),
+		SourceUrl:   p.SourceURL,
+		DocsUrl:     p.DocsURL,
+		CreatedAt:   p.CreatedAt.Format("2006-01-02T15:04:05Z07:00"),
+		UpdatedAt:   p.UpdatedAt.Format("2006-01-02T15:04:05Z07:00"),
 	}
 }
 
@@ -251,16 +263,16 @@ func fromProtoTrustStatus(s marketv1.TrustStatus) domainplugin.TrustStatus {
 
 func toProtoRelease(r *domainplugin.Release) *marketv1.Release {
 	return &marketv1.Release{
-		Id:             r.ID,
-		PluginId:       r.PluginID,
-		Version:        r.Version,
-		PublishedAt:    r.PublishedAt.Format("2006-01-02T15:04:05Z07:00"),
-		Changelog:      r.Changelog,
-		MinCliVersion:  r.MinCLIVersion,
-		MinK8sVersion:  r.MinK8sVersion,
-		IsLatest:       r.IsLatest,
-		CreatedAt:      r.CreatedAt.Format("2006-01-02T15:04:05Z07:00"),
-		UpdatedAt:      r.UpdatedAt.Format("2006-01-02T15:04:05Z07:00"),
+		Id:            r.ID,
+		PluginId:      r.PluginID,
+		Version:       r.Version,
+		PublishedAt:   r.PublishedAt.Format("2006-01-02T15:04:05Z07:00"),
+		Changelog:     r.Changelog,
+		MinCliVersion: r.MinCLIVersion,
+		MinK8SVersion: r.MinK8sVersion,
+		IsLatest:      r.IsLatest,
+		CreatedAt:     r.CreatedAt.Format("2006-01-02T15:04:05Z07:00"),
+		UpdatedAt:     r.UpdatedAt.Format("2006-01-02T15:04:05Z07:00"),
 	}
 }
 
@@ -379,4 +391,3 @@ func (h *Handler) DeleteArtifact(ctx context.Context, req *marketv1.DeleteArtifa
 
 	return &marketv1.DeleteArtifactResponse{}, nil
 }
-

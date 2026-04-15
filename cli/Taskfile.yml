@@ -1,0 +1,24 @@
+# https://taskfile.dev
+
+version: '3'
+
+tasks:
+  setup:
+    desc: Install deps and tool for docs generation.
+    cmds:
+      - go mod download
+  build:
+    cmds:
+      - go build -o bin/server ./cmd/cli
+  test:
+    cmds:
+      - go test ./... -v
+  clean:
+    cmds:
+      - rm -rf bin/
+  get-test-token:
+    cmds:
+      - go run ./cmd/get-test-token
+  default:
+    cmds:
+      - go run ./cmd/cli

@@ -11,22 +11,22 @@ import (
 )
 
 var (
-	ErrPluginNotFound      = errors.New("plugin not found")
-	ErrReleaseNotFound     = errors.New("release not found")
-	ErrArtifactNotFound    = errors.New("artifact not found")
-	ErrPublisherNotFound   = errors.New("publisher not found")
-	ErrInvalidInput        = errors.New("invalid input")
-	ErrVersionExists       = errors.New("version already exists")
-	ErrArtifactExists      = errors.New("artifact for this platform already exists")
+	ErrPluginNotFound    = errors.New("plugin not found")
+	ErrReleaseNotFound   = errors.New("release not found")
+	ErrArtifactNotFound  = errors.New("artifact not found")
+	ErrPublisherNotFound = errors.New("publisher not found")
+	ErrInvalidInput      = errors.New("invalid input")
+	ErrVersionExists     = errors.New("version already exists")
+	ErrArtifactExists    = errors.New("artifact for this platform already exists")
 )
 
 // Service handles plugin business logic
 type Service struct {
-	pluginRepo   plugin.PluginRepository
-	releaseRepo  plugin.ReleaseRepository
-	artifactRepo plugin.ArtifactRepository
+	pluginRepo    plugin.PluginRepository
+	releaseRepo   plugin.ReleaseRepository
+	artifactRepo  plugin.ArtifactRepository
 	publisherRepo plugin.PublisherRepository
-	auditService appaudit.AuditLogger
+	auditService  appaudit.AuditLogger
 }
 
 // NewService creates a new plugin service
@@ -38,11 +38,11 @@ func NewService(
 	auditService appaudit.AuditLogger,
 ) *Service {
 	return &Service{
-		pluginRepo:   pluginRepo,
-		releaseRepo:  releaseRepo,
-		artifactRepo: artifactRepo,
+		pluginRepo:    pluginRepo,
+		releaseRepo:   releaseRepo,
+		artifactRepo:  artifactRepo,
 		publisherRepo: publisherRepo,
-		auditService: auditService,
+		auditService:  auditService,
 	}
 }
 
@@ -73,7 +73,7 @@ func (s *Service) CreatePlugin(ctx context.Context, req *CreatePluginRequest) (*
 	if req.Name == "" {
 		return nil, fmt.Errorf("%w: name is required", ErrInvalidInput)
 	}
-	
+
 	// Check if publisher exists
 	pub, err := s.publisherRepo.GetByID(ctx, req.PublisherID)
 	if err != nil {
@@ -82,7 +82,7 @@ func (s *Service) CreatePlugin(ctx context.Context, req *CreatePluginRequest) (*
 	if pub == nil {
 		return nil, ErrPublisherNotFound
 	}
-	
+
 	// Check if identifier already exists
 	existing, err := s.pluginRepo.GetByIdentifier(ctx, req.Identifier)
 	if err != nil {
@@ -91,7 +91,7 @@ func (s *Service) CreatePlugin(ctx context.Context, req *CreatePluginRequest) (*
 	if existing != nil {
 		return nil, fmt.Errorf("plugin with identifier %s already exists", req.Identifier)
 	}
-	
+
 	p := &plugin.Plugin{
 		Identifier:  req.Identifier,
 		Name:        req.Name,
@@ -103,22 +103,22 @@ func (s *Service) CreatePlugin(ctx context.Context, req *CreatePluginRequest) (*
 		SourceURL:   req.SourceURL,
 		DocsURL:     req.DocsURL,
 	}
-	
+
 	if p.TrustStatus == "" {
 		p.TrustStatus = plugin.TrustStatusCommunity
 	}
-	
+
 	created, err := s.pluginRepo.Create(ctx, p)
 	if err != nil {
 		return nil, err
 	}
-	
+
 	// Log audit
 	userID := s.getUserID(ctx)
 	if userID != "" {
 		s.auditService.LogCreate(ctx, "plugin", created.ID, userID, created)
 	}
-	
+
 	return created, nil
 }
 
@@ -153,7 +153,7 @@ func (s *Service) ListPlugins(ctx context.Context, req *ListPluginsRequest) ([]*
 	if req.Limit > 100 {
 		req.Limit = 100
 	}
-	
+
 	filter := &plugin.PluginFilter{
 		Name:        req.Name,
 		Category:    req.Category,
@@ -161,7 +161,7 @@ func (s *Service) ListPlugins(ctx context.Context, req *ListPluginsRequest) ([]*
 		TrustStatus: req.TrustStatus,
 		Status:      req.Status,
 	}
-	
+
 	return s.pluginRepo.List(ctx, filter, req.Limit, req.Offset)
 }
 
@@ -184,26 +184,26 @@ func (s *Service) UpdatePlugin(ctx context.Context, req *UpdatePluginRequest) (*
 	if p == nil {
 		return nil, ErrPluginNotFound
 	}
-	
+
 	oldValue := *p
-	
+
 	p.Name = req.Name
 	p.Description = req.Description
 	p.Category = req.Category
 	p.SourceURL = req.SourceURL
 	p.DocsURL = req.DocsURL
-	
+
 	updated, err := s.pluginRepo.Update(ctx, p)
 	if err != nil {
 		return nil, err
 	}
-	
+
 	// Log audit
 	userID := s.getUserID(ctx)
 	if userID != "" {
 		s.auditService.LogUpdate(ctx, "plugin", updated.ID, userID, oldValue, updated)
 	}
-	
+
 	return updated, nil
 }
 
@@ -216,20 +216,20 @@ func (s *Service) UpdatePluginStatus(ctx context.Context, id int64, status plugi
 	if p == nil {
 		return ErrPluginNotFound
 	}
-	
+
 	oldStatus := string(p.Status)
-	
+
 	err = s.pluginRepo.UpdateStatus(ctx, id, status, reason)
 	if err != nil {
 		return err
 	}
-	
+
 	// Log audit
 	userID := s.getUserID(ctx)
 	if userID != "" {
 		s.auditService.LogStatusChange(ctx, "plugin", id, userID, reason, oldStatus, string(status))
 	}
-	
+
 	return nil
 }
 
@@ -248,7 +248,7 @@ func (s *Service) CreateRelease(ctx context.Context, req *CreateReleaseRequest) 
 	if req.Version == "" {
 		return nil, fmt.Errorf("%w: version is required", ErrInvalidInput)
 	}
-	
+
 	// Check if plugin exists
 	p, err := s.pluginRepo.GetByID(ctx, req.PluginID)
 	if err != nil {
@@ -257,7 +257,7 @@ func (s *Service) CreateRelease(ctx context.Context, req *CreateReleaseRequest) 
 	if p == nil {
 		return nil, ErrPluginNotFound
 	}
-	
+
 	// Check if version already exists
 	existing, err := s.releaseRepo.GetByPluginIDAndVersion(ctx, req.PluginID, req.Version)
 	if err != nil {
@@ -266,7 +266,7 @@ func (s *Service) CreateRelease(ctx context.Context, req *CreateReleaseRequest) 
 	if existing != nil {
 		return nil, ErrVersionExists
 	}
-	
+
 	// If this is the first release, automatically set it as latest
 	if req.IsLatest {
 		// Check if there are any existing releases
@@ -275,7 +275,7 @@ func (s *Service) CreateRelease(ctx context.Context, req *CreateReleaseRequest) 
 			req.IsLatest = true
 		}
 	}
-	
+
 	rel := &plugin.Release{
 		PluginID:      req.PluginID,
 		Version:       req.Version,
@@ -285,18 +285,18 @@ func (s *Service) CreateRelease(ctx context.Context, req *CreateReleaseRequest) 
 		MinK8sVersion: req.MinK8sVersion,
 		IsLatest:      req.IsLatest,
 	}
-	
+
 	created, err := s.releaseRepo.Create(ctx, rel)
 	if err != nil {
 		return nil, err
 	}
-	
+
 	// Log audit
 	userID := s.getUserID(ctx)
 	if userID != "" {
 		s.auditService.LogCreate(ctx, "release", created.ID, userID, created)
 	}
-	
+
 	return created, nil
 }
 
@@ -320,7 +320,7 @@ func (s *Service) ListReleases(ctx context.Context, pluginID int64, limit, offse
 	if limit > 100 {
 		limit = 100
 	}
-	
+
 	return s.releaseRepo.ListByPluginID(ctx, pluginID, limit, offset)
 }
 
@@ -354,7 +354,7 @@ func (s *Service) CreateArtifact(ctx context.Context, req *CreateArtifactRequest
 	if req.OS == "" || req.Arch == "" {
 		return nil, fmt.Errorf("%w: OS and Arch are required", ErrInvalidInput)
 	}
-	
+
 	// Check if release exists
 	rel, err := s.releaseRepo.GetByID(ctx, req.ReleaseID)
 	if err != nil {
@@ -363,7 +363,7 @@ func (s *Service) CreateArtifact(ctx context.Context, req *CreateArtifactRequest
 	if rel == nil {
 		return nil, ErrReleaseNotFound
 	}
-	
+
 	// Check if artifact already exists for this platform
 	existing, err := s.artifactRepo.GetByReleaseIDAndPlatform(ctx, req.ReleaseID, req.OS, req.Arch)
 	if err != nil {
@@ -372,7 +372,7 @@ func (s *Service) CreateArtifact(ctx context.Context, req *CreateArtifactRequest
 	if existing != nil {
 		return nil, ErrArtifactExists
 	}
-	
+
 	art := &plugin.Artifact{
 		ReleaseID:   req.ReleaseID,
 		OS:          req.OS,
@@ -384,22 +384,22 @@ func (s *Service) CreateArtifact(ctx context.Context, req *CreateArtifactRequest
 		Signature:   req.Signature,
 		KeyID:       req.KeyID,
 	}
-	
+
 	if art.Type == "" {
 		art.Type = "binary"
 	}
-	
+
 	created, err := s.artifactRepo.Create(ctx, art)
 	if err != nil {
 		return nil, err
 	}
-	
+
 	// Log audit
 	userID := s.getUserID(ctx)
 	if userID != "" {
 		s.auditService.LogCreate(ctx, "artifact", created.ID, userID, created)
 	}
-	
+
 	return created, nil
 }
 
@@ -429,18 +429,18 @@ func (s *Service) DeleteArtifact(ctx context.Context, id int64, reason string) e
 	if art == nil {
 		return ErrArtifactNotFound
 	}
-	
+
 	err = s.artifactRepo.Delete(ctx, id)
 	if err != nil {
 		return err
 	}
-	
+
 	// Log audit
 	userID := s.getUserID(ctx)
 	if userID != "" {
 		s.auditService.LogDelete(ctx, "artifact", id, userID, reason, art)
 	}
-	
+
 	return nil
 }
 
@@ -455,4 +455,3 @@ func (s *Service) GetArtifactByPlatform(ctx context.Context, releaseID int64, os
 	}
 	return art, nil
 }
-

@@ -1,7 +1,6 @@
 package grpc
 
 import (
-	"context"
 	"fmt"
 	"log"
 	"net"
@@ -11,6 +10,8 @@ import (
 
 	"google.golang.org/grpc"
 
+	authOIDC "k8s-manager/market/internal/infrastructure/auth"
+	"k8s-manager/market/internal/presentation/grpc/auth"
 	"k8s-manager/market/internal/presentation/grpc/plugin"
 	"k8s-manager/market/internal/presentation/grpc/user"
 	marketv1 "k8s-manager/proto/gen/v1/market"
@@ -25,7 +26,26 @@ type Server struct {
 
 // NewServer creates a new gRPC server
 func NewServer(port int, userHandler *user.Handler, pluginHandler *plugin.Handler) *Server {
-	grpcServer := grpc.NewServer()
+	oidcClient := authOIDC.NewOIDCClient(
+		"http://localhost:8080",
+		"my-client-id",
+		true, // только для dev
+	)
+
+	rules := map[string]auth.Rule{
+		"/market.v1.PluginService/ListPlugins": {
+			Public: true,
+		},
+		"/market.v1.PluginService/CreatePlugin": {
+			Roles: []string{"admin", "editor"},
+		},
+		"/market.v1.PluginService/DeletePlugin": {
+			Roles: []string{"admin"},
+		},
+	}
+	grpcServer := grpc.NewServer(
+		grpc.UnaryInterceptor(auth.UnaryAuthInterceptor(rules, auth.NewOIDCTokenParser(oidcClient))),
+	)
 
 	usersv1.RegisterUserServiceServer(grpcServer, userHandler)
 	marketv1.RegisterPluginServiceServer(grpcServer, pluginHandler)
@@ -78,4 +98,3 @@ func (s *Server) Run() error {
 		return nil
 	}
 }
-

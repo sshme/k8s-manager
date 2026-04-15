@@ -18,7 +18,7 @@ var (
 
 // TokenClaims represents JWT token claims
 type TokenClaims struct {
-	Sub   string   `json:"sub"`   // User ID
+	Sub   string   `json:"sub"` // User ID
 	Email string   `json:"email"`
 	Roles []string `json:"roles"`
 	Exp   int64    `json:"exp"`
@@ -27,10 +27,10 @@ type TokenClaims struct {
 
 // OIDCClient handles OIDC token validation
 type OIDCClient struct {
-	issuerURL    string
-	clientID     string
-	httpClient   *http.Client
-	skipVerify   bool // For development/testing
+	issuerURL  string
+	clientID   string
+	httpClient *http.Client
+	skipVerify bool // For development/testing
 }
 
 // NewOIDCClient creates a new OIDC client
@@ -55,7 +55,7 @@ func (c *OIDCClient) ValidateToken(ctx context.Context, token string) (*TokenCla
 		// In production, use a proper JWT library like github.com/golang-jwt/jwt/v5
 		return c.parseTokenClaims(token)
 	}
-	
+
 	// Production mode: validate with OIDC provider
 	// This would typically involve:
 	// 1. Calling the introspection endpoint
@@ -70,25 +70,25 @@ func (c *OIDCClient) parseTokenClaims(token string) (*TokenClaims, error) {
 	if len(parts) != 3 {
 		return nil, ErrInvalidToken
 	}
-	
+
 	// Decode payload (base64url)
 	payload := parts[1]
 	// Add padding if needed
 	for len(payload)%4 != 0 {
 		payload += "="
 	}
-	
+
 	// Decode base64url
 	decoded, err := base64URLDecode(payload)
 	if err != nil {
 		return nil, fmt.Errorf("failed to decode token: %w", err)
 	}
-	
+
 	var claims TokenClaims
 	if err := json.Unmarshal(decoded, &claims); err != nil {
 		return nil, fmt.Errorf("failed to parse claims: %w", err)
 	}
-	
+
 	// Check expiration
 	if claims.Exp > 0 {
 		expTime := time.Unix(claims.Exp, 0)
@@ -96,7 +96,7 @@ func (c *OIDCClient) parseTokenClaims(token string) (*TokenClaims, error) {
 			return nil, ErrTokenExpired
 		}
 	}
-	
+
 	return &claims, nil
 }
 
@@ -112,12 +112,12 @@ func base64URLDecode(s string) ([]byte, error) {
 	// Replace URL-safe characters
 	s = strings.ReplaceAll(s, "-", "+")
 	s = strings.ReplaceAll(s, "_", "/")
-	
+
 	// Add padding
 	for len(s)%4 != 0 {
 		s += "="
 	}
-	
+
 	// Use standard base64 decoding
 	return base64.StdEncoding.DecodeString(s)
 }
@@ -139,4 +139,3 @@ func (c *OIDCClient) GetUserRolesFromToken(ctx context.Context, token string) ([
 	}
 	return claims.Roles, nil
 }
-

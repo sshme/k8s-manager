@@ -3,7 +3,6 @@ module k8s-manager/market
 go 1.25.5
 
 require (
-	github.com/go-chi/chi/v5 v5.2.3
 	github.com/google/wire v0.7.0
 	github.com/lib/pq v1.10.9
 	google.golang.org/grpc v1.77.0

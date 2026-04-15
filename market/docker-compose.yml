@@ -35,7 +35,7 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
-    command: ["./market-service", "-db-host", "postgres", "-http-port", "8080", "-storage-path", "/app/storage"]
+    command: ["./market-service", "-db-host", "postgres", "-grpc-port", "8080", "-storage-path", "/app/storage"]
 
 volumes:
   postgres_data:
