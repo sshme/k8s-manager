@@ -1,66 +1,156 @@
 package main
 
 import (
-	"context"
-	"flag"
 	"fmt"
-	"log"
-	"time"
+	"os"
+	"strings"
 
-	marketv1 "k8s-manager/proto/gen/v1/market"
-
-	"google.golang.org/grpc"
-	"google.golang.org/grpc/credentials/insecure"
-	"google.golang.org/grpc/metadata"
-	"google.golang.org/protobuf/encoding/protojson"
-	"google.golang.org/protobuf/reflect/protoreflect"
+	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
 )
 
-var accessToken = "eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCIsImtpZCI6IkVFSElmdWVaVk52QURHY0l6cDZQaiJ9.eyJpc3MiOiJodHRwczovL2Rldi1uNzV2Yng0aGdkazRrcmFpLmV1LmF1dGgwLmNvbS8iLCJzdWIiOiJnb29nbGUtb2F1dGgyfDExMzY2OTE0NjIwMTc1NzE2NzkzMSIsImF1ZCI6WyJodHRwczovL2s4cy1iYWNrZW5kIiwiaHR0cHM6Ly9kZXYtbjc1dmJ4NGhnZGs0a3JhaS5ldS5hdXRoMC5jb20vdXNlcmluZm8iXSwiaWF0IjoxNzc2MTcwNDk0LCJleHAiOjE3NzYyNTY4OTQsInNjb3BlIjoib3BlbmlkIHByb2ZpbGUgZW1haWwiLCJhenAiOiJqUzRRM0RDSmxIbGttOWRqZGt4YjBHaEozREQ0d0E2WCJ9.jkMsQuPnB92FlfOHPt0dCfv2xNNxzCA3ZI1HNwSUFdRB-0dxh-U11jd3hBDeGpttbt_doVzZm5R9mJMpzQ_dpVyvdZD1C7TXhB5uNu-djw9GszilOwBf1BXlA9j36n-168IOnWjmM5oMcHfXq2SS2U_PoxmEwhH1jgRzYJOhO-prKXpDz6Qmmbj4ch0pESwRQgXuehmEFl9jCdctntNfEIwN3aAzEk52szkuogi4RD8UYv422RKa0xQceYp5JFgpI0ufjVkdRkZ1qkNDPIPRDXEcI5gfOroRb9NaCtdAyr99pZVheFA-SrDyjkC4YHIEklCqDO2iiRX1n-Tl2lb4yw"
-
-func mustProtoJSON(m interface{ ProtoReflect() protoreflect.Message }) string {
-	b, err := protojson.MarshalOptions{
-		Multiline:       true,
-		Indent:          "  ",
-		UseProtoNames:   true,
-		EmitUnpopulated: true,
-	}.Marshal(m)
-	if err != nil {
-		return fmt.Sprintf("marshal error: %v", err)
-	}
-	return string(b)
+type model struct {
+	width  int
+	height int
+	items  []string
+	cursor int
 }
 
-func withAuth(ctx context.Context, accessToken string) context.Context {
-	return metadata.AppendToOutgoingContext(
-		ctx,
-		"authorization", "Bearer "+accessToken,
+func initialModel() model {
+	return model{
+		items: []string{
+			"Services",
+			"Plugins",
+			"Logs",
+		},
+	}
+}
+
+func (m model) Init() tea.Cmd {
+	return nil
+}
+
+func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	switch msg := msg.(type) {
+	case tea.WindowSizeMsg:
+		m.width = msg.Width
+		m.height = msg.Height
+	case tea.KeyMsg:
+		switch msg.String() {
+		case "ctrl+c", "q":
+			return m, tea.Quit
+		case "up", "k":
+			if m.cursor > 0 {
+				m.cursor--
+			}
+		case "down", "j":
+			if m.cursor < len(m.items)-1 {
+				m.cursor++
+			}
+		}
+	}
+	return m, nil
+}
+
+func (m model) View() string {
+	if m.width == 0 || m.height == 0 {
+		return "Loading layout..."
+	}
+
+	headerStyle := lipgloss.NewStyle().
+		Bold(true).
+		Padding(0, 1).
+		Border(lipgloss.NormalBorder(), false, false, true, false)
+
+	sidebarStyle := lipgloss.NewStyle().
+		Padding(1).
+		Border(lipgloss.RoundedBorder()).
+		Height(0)
+
+	contentStyle := lipgloss.NewStyle().
+		Padding(1).
+		Border(lipgloss.NormalBorder(), true, false, false, false)
+
+	footerStyle := lipgloss.NewStyle().
+		Padding(0, 1).
+		Border(lipgloss.NormalBorder(), true, false, false, false)
+
+	selectedItemStyle := lipgloss.NewStyle().Bold(true)
+	normalItemStyle := lipgloss.NewStyle()
+
+	headerFrameW, _ := headerStyle.GetFrameSize()
+	footerFrameW, _ := footerStyle.GetFrameSize()
+
+	sidebarFrameW, sidebarFrameH := sidebarStyle.GetFrameSize()
+	contentFrameW, contentFrameH := contentStyle.GetFrameSize()
+
+	header := headerStyle.
+		Width(max(0, m.width-headerFrameW)).
+		Render("k8s-manager | context: dev-cluster | namespace: default")
+
+	footer := footerStyle.
+		Width(max(0, m.width-footerFrameW)).
+		Render("try q,j,k")
+
+	headerHeight := lipgloss.Height(header)
+	footerHeight := lipgloss.Height(footer)
+
+	bodyHeight := max(m.height-headerHeight-footerHeight, 3)
+
+	sidebarWidth := 24
+	contentWidth := max(m.width-sidebarWidth, 20)
+
+	var sidebarLines []string
+	sidebarLines = append(sidebarLines, "Tabs", "")
+
+	for i, item := range m.items {
+		prefix := "  "
+		style := normalItemStyle
+
+		if i == m.cursor {
+			prefix = "> "
+			style = selectedItemStyle
+		}
+
+		sidebarLines = append(sidebarLines, style.Render(prefix+item))
+	}
+
+	sidebar := sidebarStyle.
+		Width(max(0, sidebarWidth-sidebarFrameW)).
+		Height(max(0, bodyHeight-sidebarFrameH)).
+		Render(strings.Join(sidebarLines, "\n"))
+
+	selected := m.items[m.cursor]
+	contentText := []string{
+		fmt.Sprintf("Selected tab: %s", selected),
+		"",
+		"Main workspace.",
+	}
+
+	content := contentStyle.
+		Width(max(0, contentWidth-contentFrameW)).
+		Height(max(0, bodyHeight-contentFrameH)).
+		Render(strings.Join(contentText, "\n"))
+
+	body := lipgloss.JoinHorizontal(
+		lipgloss.Top,
+		sidebar,
+		content,
+	)
+
+	return lipgloss.JoinVertical(
+		lipgloss.Left,
+		header,
+		body,
+		footer,
 	)
 }
 
 func main() {
-	flag.StringVar(&accessToken, "access-token", accessToken, "Access Token")
-	flag.Parse()
-
-	ctx := withAuth(context.Background(), accessToken)
-
-	conn, err := grpc.NewClient(
-		"localhost:8080",
-		grpc.WithTransportCredentials(insecure.NewCredentials()),
-	)
-	if err != nil {
-		log.Fatal(err)
+	fmt.Println("Hello")
+	p := tea.NewProgram(initialModel(), tea.WithAltScreen())
+	if _, err := p.Run(); err != nil {
+		fmt.Println("Error: ", err)
+		os.Exit(1)
 	}
-	defer conn.Close()
-
-	client := marketv1.NewPluginServiceClient(conn)
-
-	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
-	defer cancel()
-
-	resp, err := client.ListPlugins(ctx, &marketv1.ListPluginsRequest{})
-	if err != nil {
-		log.Fatal(err)
-	}
-	log.Println(mustProtoJSON(resp))
 }

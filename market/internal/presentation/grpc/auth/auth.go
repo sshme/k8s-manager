@@ -2,6 +2,7 @@ package auth
 
 import "context"
 
+// TODO: Now we have only UserID in tokens, all other will be empty (Fix later)
 type Claims struct {
 	UserID string
 	Email  string

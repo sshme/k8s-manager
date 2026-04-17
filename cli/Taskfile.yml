@@ -19,6 +19,9 @@ tasks:
   get-test-token:
     cmds:
       - go run ./cmd/get-test-token
+  test:
+    cmds:
+      - go run ./cmd/test
   default:
     cmds:
       - go run ./cmd/cli
