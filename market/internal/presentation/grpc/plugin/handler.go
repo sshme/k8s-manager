@@ -9,9 +9,6 @@ import (
 	domainplugin "k8s-manager/market/internal/domain/plugin"
 	"k8s-manager/market/internal/presentation/grpc/auth"
 	marketv1 "k8s-manager/proto/gen/v1/market"
-
-	"google.golang.org/grpc/codes"
-	"google.golang.org/grpc/status"
 )
 
 // Handler implements the gRPC PluginService
@@ -64,12 +61,9 @@ func (h *Handler) GetPlugin(ctx context.Context, req *marketv1.GetPluginRequest)
 
 // ListPlugins handles ListPlugins gRPC request
 func (h *Handler) ListPlugins(ctx context.Context, req *marketv1.ListPluginsRequest) (*marketv1.ListPluginsResponse, error) {
-	claims, ok := auth.GetClaims(ctx)
-	if !ok {
-		return nil, status.Error(codes.Unauthenticated, "no claims")
+	if claims, ok := auth.GetClaims(ctx); ok {
+		log.Printf("userID=%s username=%s email=%s", claims.UserID, claims.Username, claims.Email)
 	}
-
-	log.Printf("userID=%s email=%s roles=%v", claims.UserID, claims.Email, claims.Roles)
 
 	listReq := &appplugin.ListPluginsRequest{
 		Name:        req.Name,

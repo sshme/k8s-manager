@@ -15,9 +15,9 @@ func NewOIDCTokenParser(oidc *auth.OIDCClient) TokenParser {
 		}
 
 		return &Claims{
-			UserID: tc.Sub,
-			Email:  tc.Email,
-			Roles:  tc.Roles,
+			UserID:   tc.Sub,
+			Email:    tc.Email,
+			Username: tc.PreferredUsername,
 		}, nil
 	}
 }

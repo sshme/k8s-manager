@@ -6,6 +6,7 @@ import (
 	"net"
 	"os"
 	"os/signal"
+	"strconv"
 	"syscall"
 
 	"google.golang.org/grpc"
@@ -27,21 +28,13 @@ type Server struct {
 // NewServer creates a new gRPC server
 func NewServer(port int, userHandler *user.Handler, pluginHandler *plugin.Handler) *Server {
 	oidcClient := authOIDC.NewOIDCClient(
-		"http://localhost:8080",
-		"my-client-id",
-		true, // только для dev
+		getEnv("KEYCLOAK_ISSUER_URL", "http://localhost:8081/realms/k8s-manager"),
+		getEnv("KEYCLOAK_CLIENT_ID", "k8s-manager-cli"),
+		getEnvBool("KEYCLOAK_INSECURE_SKIP_TLS", false),
 	)
 
 	rules := map[string]auth.Rule{
-		"/market.v1.PluginService/ListPlugins": {
-			Public: true,
-		},
-		"/market.v1.PluginService/CreatePlugin": {
-			Roles: []string{"admin", "editor"},
-		},
-		"/market.v1.PluginService/DeletePlugin": {
-			Roles: []string{"admin"},
-		},
+		"/grpc.health.v1.Health/Check": {Public: true},
 	}
 	grpcServer := grpc.NewServer(
 		grpc.UnaryInterceptor(auth.UnaryAuthInterceptor(rules, auth.NewOIDCTokenParser(oidcClient))),
@@ -54,6 +47,28 @@ func NewServer(port int, userHandler *user.Handler, pluginHandler *plugin.Handle
 		grpcServer: grpcServer,
 		port:       port,
 	}
+}
+
+func getEnv(key, fallback string) string {
+	if value := os.Getenv(key); value != "" {
+		return value
+	}
+
+	return fallback
+}
+
+func getEnvBool(key string, fallback bool) bool {
+	value := os.Getenv(key)
+	if value == "" {
+		return fallback
+	}
+
+	parsed, err := strconv.ParseBool(value)
+	if err != nil {
+		return fallback
+	}
+
+	return parsed
 }
 
 // Start starts the gRPC server

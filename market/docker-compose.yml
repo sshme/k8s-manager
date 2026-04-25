@@ -16,6 +16,39 @@ services:
       timeout: 5s
       retries: 5
 
+  keycloak:
+    image: quay.io/keycloak/keycloak:26.1
+    environment:
+      KEYCLOAK_ADMIN: admin
+      KEYCLOAK_ADMIN_PASSWORD: admin
+    ports:
+      - "8081:8080"
+    volumes:
+      - ./keycloak/realm-export.json:/opt/keycloak/data/import/realm-export.json:ro
+    command: ["start-dev", "--import-realm"]
+
+  keycloak-bootstrap:
+    image: quay.io/keycloak/keycloak:26.1
+    depends_on:
+      keycloak:
+        condition: service_started
+    restart: "no"
+    entrypoint:
+      - /bin/sh
+      - -ec
+      - |
+        until /opt/keycloak/bin/kcadm.sh config credentials \
+          --server http://keycloak:8080 \
+          --realm master \
+          --user admin \
+          --password admin >/dev/null 2>&1; do
+          sleep 2
+        done
+        /opt/keycloak/bin/kcadm.sh update realms/k8s-manager \
+          -s registrationAllowed=true \
+          -s resetPasswordAllowed=true \
+          -s loginWithEmailAllowed=true
+
   market-service:
     build:
       context: ..
@@ -30,14 +63,19 @@ services:
       DB_NAME: k8s_market
       HTTP_PORT: 8080
       STORAGE_PATH: /app/storage
+      KEYCLOAK_ISSUER_URL: http://keycloak:8080/realms/k8s-manager
+      KEYCLOAK_CLIENT_ID: k8s-manager-cli
     volumes:
       - market_storage:/app/storage
     depends_on:
       postgres:
         condition: service_healthy
+      keycloak:
+        condition: service_started
+      keycloak-bootstrap:
+        condition: service_completed_successfully
     command: ["./market-service", "-db-host", "postgres", "-grpc-port", "8080", "-storage-path", "/app/storage"]
 
 volumes:
   postgres_data:
   market_storage:
-

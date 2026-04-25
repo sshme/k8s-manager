@@ -3,7 +3,6 @@ package auth
 import (
 	"context"
 	"errors"
-	"log"
 
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
@@ -35,7 +34,6 @@ func UnaryAuthInterceptor(rules map[string]Rule, parseToken TokenParser) grpc.Un
 		}
 
 		claims, err := parseToken(ctx, token)
-		log.Println(claims)
 		if err != nil {
 			if rule.Public {
 				return handler(ctx, req)
@@ -44,10 +42,6 @@ func UnaryAuthInterceptor(rules map[string]Rule, parseToken TokenParser) grpc.Un
 		}
 
 		ctx = WithClaims(ctx, claims)
-
-		if !rule.Public && !hasRequiredRole(claims.Roles, rule.Roles) {
-			return nil, status.Error(codes.PermissionDenied, "insufficient role")
-		}
 
 		return handler(ctx, req)
 	}
