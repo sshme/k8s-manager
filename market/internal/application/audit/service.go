@@ -3,6 +3,7 @@ package audit
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 
 	"k8s-manager/market/internal/domain/audit"
 )
@@ -21,40 +22,36 @@ func NewService(auditRepo audit.AuditRepository) *Service {
 
 // LogCreate logs a create action
 func (s *Service) LogCreate(ctx context.Context, entityType string, entityID int64, userID string, newValue interface{}) error {
-	newValueJSON, _ := json.Marshal(newValue)
 	return s.auditRepo.Create(ctx, &audit.AuditLog{
 		EntityType: entityType,
 		EntityID:   entityID,
 		Action:     "create",
 		UserID:     userID,
-		NewValue:   string(newValueJSON),
+		NewValue:   mustJSON(newValue),
 	})
 }
 
 // LogUpdate logs an update action
 func (s *Service) LogUpdate(ctx context.Context, entityType string, entityID int64, userID string, oldValue, newValue interface{}) error {
-	oldValueJSON, _ := json.Marshal(oldValue)
-	newValueJSON, _ := json.Marshal(newValue)
 	return s.auditRepo.Create(ctx, &audit.AuditLog{
 		EntityType: entityType,
 		EntityID:   entityID,
 		Action:     "update",
 		UserID:     userID,
-		OldValue:   string(oldValueJSON),
-		NewValue:   string(newValueJSON),
+		OldValue:   mustJSON(oldValue),
+		NewValue:   mustJSON(newValue),
 	})
 }
 
 // LogDelete logs a delete action
 func (s *Service) LogDelete(ctx context.Context, entityType string, entityID int64, userID string, reason string, oldValue interface{}) error {
-	oldValueJSON, _ := json.Marshal(oldValue)
 	return s.auditRepo.Create(ctx, &audit.AuditLog{
 		EntityType: entityType,
 		EntityID:   entityID,
 		Action:     "delete",
 		UserID:     userID,
 		Reason:     reason,
-		OldValue:   string(oldValueJSON),
+		OldValue:   mustJSON(oldValue),
 	})
 }
 
@@ -76,3 +73,14 @@ func (s *Service) ListAuditLogs(ctx context.Context, entityType string, entityID
 	return s.auditRepo.List(ctx, entityType, entityID, limit, offset)
 }
 
+func mustJSON(value interface{}) string {
+	if value == nil {
+		return ""
+	}
+
+	payload, err := json.Marshal(value)
+	if err != nil {
+		return fmt.Sprintf(`{"marshal_error":%q}`, err.Error())
+	}
+	return string(payload)
+}

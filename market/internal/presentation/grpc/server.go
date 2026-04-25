@@ -31,6 +31,7 @@ func NewServer(port int, userHandler *user.Handler, pluginHandler *plugin.Handle
 		getEnv("KEYCLOAK_ISSUER_URL", "http://localhost:8081/realms/k8s-manager"),
 		getEnv("KEYCLOAK_CLIENT_ID", "k8s-manager-cli"),
 		getEnvBool("KEYCLOAK_INSECURE_SKIP_TLS", false),
+		getEnv("KEYCLOAK_TOKEN_ISSUER_URL", ""),
 	)
 
 	rules := map[string]auth.Rule{
@@ -38,10 +39,12 @@ func NewServer(port int, userHandler *user.Handler, pluginHandler *plugin.Handle
 	}
 	grpcServer := grpc.NewServer(
 		grpc.UnaryInterceptor(auth.UnaryAuthInterceptor(rules, auth.NewOIDCTokenParser(oidcClient))),
+		grpc.StreamInterceptor(auth.StreamAuthInterceptor(rules, auth.NewOIDCTokenParser(oidcClient))),
 	)
 
 	usersv1.RegisterUserServiceServer(grpcServer, userHandler)
 	marketv1.RegisterPluginServiceServer(grpcServer, pluginHandler)
+	marketv1.RegisterPublisherServiceServer(grpcServer, pluginHandler)
 
 	return &Server{
 		grpcServer: grpcServer,

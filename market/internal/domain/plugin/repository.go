@@ -17,6 +17,7 @@ type PluginRepository interface {
 // PluginFilter represents filtering options for plugins
 type PluginFilter struct {
 	Name        string
+	Query       string
 	Category    string
 	PublisherID int64
 	TrustStatus TrustStatus
@@ -42,6 +43,13 @@ type ArtifactRepository interface {
 	Delete(ctx context.Context, id int64) error
 }
 
+// InstallationRepository defines the interface for user plugin installations.
+type InstallationRepository interface {
+	Install(ctx context.Context, userID string, pluginID int64) (*PluginInstallation, error)
+	Uninstall(ctx context.Context, userID string, pluginID int64) error
+	ListByUserID(ctx context.Context, userID string, limit, offset int) ([]*PluginInstallation, int64, error)
+}
+
 // PublisherRepository defines the interface for publisher persistence
 type PublisherRepository interface {
 	Create(ctx context.Context, publisher *Publisher) (*Publisher, error)
@@ -49,4 +57,3 @@ type PublisherRepository interface {
 	GetByName(ctx context.Context, name string) (*Publisher, error)
 	List(ctx context.Context, limit, offset int) ([]*Publisher, int64, error)
 }
-

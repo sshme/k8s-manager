@@ -27,17 +27,17 @@ func (r *PostgresPluginRepository) Create(ctx context.Context, p *plugin.Plugin)
 		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, NOW(), NOW())
 		RETURNING id, created_at, updated_at
 	`
-	
+
 	var createdAt, updatedAt time.Time
 	err := r.db.QueryRowContext(ctx, query,
 		p.Identifier, p.Name, p.Description, p.Category, p.PublisherID,
 		string(p.Status), string(p.TrustStatus), p.SourceURL, p.DocsURL,
 	).Scan(&p.ID, &createdAt, &updatedAt)
-	
+
 	if err != nil {
 		return nil, fmt.Errorf("failed to create plugin: %w", err)
 	}
-	
+
 	p.CreatedAt = createdAt
 	p.UpdatedAt = updatedAt
 	return p, nil
@@ -50,21 +50,21 @@ func (r *PostgresPluginRepository) GetByID(ctx context.Context, id int64) (*plug
 		FROM plugins
 		WHERE id = $1
 	`
-	
+
 	p := &plugin.Plugin{}
 	var statusStr, trustStatusStr string
 	err := r.db.QueryRowContext(ctx, query, id).Scan(
 		&p.ID, &p.Identifier, &p.Name, &p.Description, &p.Category, &p.PublisherID,
 		&statusStr, &trustStatusStr, &p.SourceURL, &p.DocsURL, &p.CreatedAt, &p.UpdatedAt,
 	)
-	
+
 	if err == sql.ErrNoRows {
 		return nil, nil
 	}
 	if err != nil {
 		return nil, fmt.Errorf("failed to get plugin: %w", err)
 	}
-	
+
 	p.Status = plugin.PluginStatus(statusStr)
 	p.TrustStatus = plugin.TrustStatus(trustStatusStr)
 	return p, nil
@@ -77,21 +77,21 @@ func (r *PostgresPluginRepository) GetByIdentifier(ctx context.Context, identifi
 		FROM plugins
 		WHERE identifier = $1
 	`
-	
+
 	p := &plugin.Plugin{}
 	var statusStr, trustStatusStr string
 	err := r.db.QueryRowContext(ctx, query, identifier).Scan(
 		&p.ID, &p.Identifier, &p.Name, &p.Description, &p.Category, &p.PublisherID,
 		&statusStr, &trustStatusStr, &p.SourceURL, &p.DocsURL, &p.CreatedAt, &p.UpdatedAt,
 	)
-	
+
 	if err == sql.ErrNoRows {
 		return nil, nil
 	}
 	if err != nil {
 		return nil, fmt.Errorf("failed to get plugin: %w", err)
 	}
-	
+
 	p.Status = plugin.PluginStatus(statusStr)
 	p.TrustStatus = plugin.TrustStatus(trustStatusStr)
 	return p, nil
@@ -102,11 +102,16 @@ func (r *PostgresPluginRepository) List(ctx context.Context, filter *plugin.Plug
 	var conditions []string
 	var args []interface{}
 	argPos := 1
-	
+
 	if filter != nil {
 		if filter.Name != "" {
 			conditions = append(conditions, fmt.Sprintf("name ILIKE $%d", argPos))
 			args = append(args, "%"+filter.Name+"%")
+			argPos++
+		}
+		if filter.Query != "" {
+			conditions = append(conditions, fmt.Sprintf("(identifier ILIKE $%d OR name ILIKE $%d OR description ILIKE $%d)", argPos, argPos, argPos))
+			args = append(args, "%"+filter.Query+"%")
 			argPos++
 		}
 		if filter.Category != "" {
@@ -130,12 +135,12 @@ func (r *PostgresPluginRepository) List(ctx context.Context, filter *plugin.Plug
 			argPos++
 		}
 	}
-	
+
 	whereClause := ""
 	if len(conditions) > 0 {
 		whereClause = "WHERE " + strings.Join(conditions, " AND ")
 	}
-	
+
 	// Count total
 	countQuery := "SELECT COUNT(*) FROM plugins " + whereClause
 	var total int64
@@ -143,7 +148,7 @@ func (r *PostgresPluginRepository) List(ctx context.Context, filter *plugin.Plug
 	if err != nil {
 		return nil, 0, fmt.Errorf("failed to count plugins: %w", err)
 	}
-	
+
 	// Get plugins
 	query := fmt.Sprintf(`
 		SELECT id, identifier, name, description, category, publisher_id, status, trust_status, source_url, docs_url, created_at, updated_at
@@ -152,14 +157,14 @@ func (r *PostgresPluginRepository) List(ctx context.Context, filter *plugin.Plug
 		ORDER BY created_at DESC
 		LIMIT $%d OFFSET $%d
 	`, whereClause, argPos, argPos+1)
-	
+
 	args = append(args, limit, offset)
 	rows, err := r.db.QueryContext(ctx, query, args...)
 	if err != nil {
 		return nil, 0, fmt.Errorf("failed to list plugins: %w", err)
 	}
 	defer rows.Close()
-	
+
 	var plugins []*plugin.Plugin
 	for rows.Next() {
 		p := &plugin.Plugin{}
@@ -175,7 +180,7 @@ func (r *PostgresPluginRepository) List(ctx context.Context, filter *plugin.Plug
 		p.TrustStatus = plugin.TrustStatus(trustStatusStr)
 		plugins = append(plugins, p)
 	}
-	
+
 	return plugins, total, nil
 }
 
@@ -187,15 +192,15 @@ func (r *PostgresPluginRepository) Update(ctx context.Context, p *plugin.Plugin)
 		WHERE id = $1
 		RETURNING updated_at
 	`
-	
+
 	err := r.db.QueryRowContext(ctx, query,
 		p.ID, p.Name, p.Description, p.Category, p.SourceURL, p.DocsURL,
 	).Scan(&p.UpdatedAt)
-	
+
 	if err != nil {
 		return nil, fmt.Errorf("failed to update plugin: %w", err)
 	}
-	
+
 	return p, nil
 }
 
@@ -206,19 +211,18 @@ func (r *PostgresPluginRepository) UpdateStatus(ctx context.Context, id int64, s
 		SET status = $2, updated_at = NOW()
 		WHERE id = $1
 	`
-	
+
 	_, err := r.db.ExecContext(ctx, query, id, string(status))
 	if err != nil {
 		return fmt.Errorf("failed to update plugin status: %w", err)
 	}
-	
+
 	// Log to audit
 	auditQuery := `
 		INSERT INTO audit_log (entity_type, entity_id, action, reason, new_value, created_at)
 		VALUES ('plugin', $1, 'status_change', $2, $3, NOW())
 	`
 	_, _ = r.db.ExecContext(ctx, auditQuery, id, reason, fmt.Sprintf(`{"status": "%s"}`, status))
-	
+
 	return nil
 }
-

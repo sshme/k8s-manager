@@ -1,12 +1,15 @@
 package plugin
 
 import (
+	"archive/zip"
+	"bytes"
 	"context"
 	"fmt"
-	"log"
+	"io"
 
 	appplugin "k8s-manager/market/internal/application/plugin"
 	domainplugin "k8s-manager/market/internal/domain/plugin"
+	"k8s-manager/market/internal/infrastructure/storage"
 	"k8s-manager/market/internal/presentation/grpc/auth"
 	marketv1 "k8s-manager/proto/gen/v1/market"
 )
@@ -14,13 +17,16 @@ import (
 // Handler implements the gRPC PluginService
 type Handler struct {
 	marketv1.UnimplementedPluginServiceServer
+	marketv1.UnimplementedPublisherServiceServer
 	service *appplugin.Service
+	storage storage.ArtifactStorage
 }
 
 // NewHandler creates a new gRPC plugin handler
-func NewHandler(service *appplugin.Service) *Handler {
+func NewHandler(service *appplugin.Service, storage storage.ArtifactStorage) *Handler {
 	return &Handler{
 		service: service,
+		storage: storage,
 	}
 }
 
@@ -37,7 +43,7 @@ func (h *Handler) CreatePlugin(ctx context.Context, req *marketv1.CreatePluginRe
 		DocsURL:     req.DocsUrl,
 	}
 
-	p, err := h.service.CreatePlugin(ctx, createReq)
+	p, err := h.service.CreatePlugin(contextWithClaimsUserID(ctx), createReq)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create plugin: %w", err)
 	}
@@ -61,12 +67,9 @@ func (h *Handler) GetPlugin(ctx context.Context, req *marketv1.GetPluginRequest)
 
 // ListPlugins handles ListPlugins gRPC request
 func (h *Handler) ListPlugins(ctx context.Context, req *marketv1.ListPluginsRequest) (*marketv1.ListPluginsResponse, error) {
-	if claims, ok := auth.GetClaims(ctx); ok {
-		log.Printf("userID=%s username=%s email=%s", claims.UserID, claims.Username, claims.Email)
-	}
-
 	listReq := &appplugin.ListPluginsRequest{
 		Name:        req.Name,
+		Query:       req.Query,
 		Category:    req.Category,
 		PublisherID: req.PublisherId,
 		TrustStatus: fromProtoTrustStatus(req.TrustStatus),
@@ -133,7 +136,7 @@ func (h *Handler) CreateRelease(ctx context.Context, req *marketv1.CreateRelease
 		IsLatest:      req.IsLatest,
 	}
 
-	rel, err := h.service.CreateRelease(ctx, createReq)
+	rel, err := h.service.CreateRelease(contextWithClaimsUserID(ctx), createReq)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create release: %w", err)
 	}
@@ -187,6 +190,10 @@ func (h *Handler) GetLatestRelease(ctx context.Context, req *marketv1.GetLatestR
 
 // Helper functions to convert domain models to proto
 func toProtoPlugin(p *domainplugin.Plugin) *marketv1.Plugin {
+	if p == nil {
+		return nil
+	}
+
 	return &marketv1.Plugin{
 		Id:          p.ID,
 		Identifier:  p.Identifier,
@@ -286,16 +293,42 @@ func toProtoArtifact(a *domainplugin.Artifact) *marketv1.Artifact {
 	}
 }
 
+func toProtoInstalledPlugin(installed *domainplugin.PluginInstallation) *marketv1.InstalledPlugin {
+	if installed == nil {
+		return nil
+	}
+
+	return &marketv1.InstalledPlugin{
+		Plugin:      toProtoPlugin(installed.Plugin),
+		InstalledAt: installed.InstalledAt.Format("2006-01-02T15:04:05Z07:00"),
+	}
+}
+
+func toProtoPublisher(pub *domainplugin.Publisher) *marketv1.Publisher {
+	if pub == nil {
+		return nil
+	}
+
+	return &marketv1.Publisher{
+		Id:          pub.ID,
+		Name:        pub.Name,
+		Description: pub.Description,
+		WebsiteUrl:  pub.WebsiteURL,
+		CreatedAt:   pub.CreatedAt.Format("2006-01-02T15:04:05Z07:00"),
+		UpdatedAt:   pub.UpdatedAt.Format("2006-01-02T15:04:05Z07:00"),
+	}
+}
+
 // UploadArtifact handles UploadArtifact gRPC stream request
 func (h *Handler) UploadArtifact(stream marketv1.PluginService_UploadArtifactServer) error {
 	var metadata *marketv1.ArtifactMetadata
-	var chunks []byte
+	var chunks bytes.Buffer
 
 	// Receive stream
 	for {
 		req, err := stream.Recv()
 		if err != nil {
-			if err.Error() == "EOF" {
+			if err == io.EOF {
 				break
 			}
 			return fmt.Errorf("failed to receive: %w", err)
@@ -305,23 +338,67 @@ func (h *Handler) UploadArtifact(stream marketv1.PluginService_UploadArtifactSer
 		case *marketv1.UploadArtifactRequest_Metadata:
 			metadata = data.Metadata
 		case *marketv1.UploadArtifactRequest_Chunk:
-			chunks = append(chunks, data.Chunk...)
+			if _, err := chunks.Write(data.Chunk); err != nil {
+				return fmt.Errorf("failed to buffer artifact chunk: %w", err)
+			}
 		}
 	}
 
 	if metadata == nil {
 		return fmt.Errorf("metadata is required")
 	}
+	if metadata.ReleaseId == 0 {
+		return fmt.Errorf("release_id is required")
+	}
+	if metadata.Os == "" || metadata.Arch == "" {
+		return fmt.Errorf("os and arch are required")
+	}
 
-	// TODO: Save file to storage and create artifact
-	// This is a simplified version - in production, you would:
-	// 1. Save chunks to temporary file
-	// 2. Calculate checksum
-	// 3. Move to final storage location
-	// 4. Create artifact record
+	data := chunks.Bytes()
+	if len(data) == 0 {
+		return fmt.Errorf("artifact content is required")
+	}
+	if _, err := zip.NewReader(bytes.NewReader(data), int64(len(data))); err != nil {
+		return fmt.Errorf("artifact must be a valid zip archive: %w", err)
+	}
+
+	rel, err := h.service.GetRelease(stream.Context(), metadata.ReleaseId)
+	if err != nil {
+		return fmt.Errorf("failed to get release: %w", err)
+	}
+
+	filename := metadata.OriginalFilename
+	if filename == "" {
+		filename = "artifact.zip"
+	}
+	storagePath, checksum, size, err := h.storage.Save(rel.PluginID, rel.ID, metadata.Os, metadata.Arch, filename, bytes.NewReader(data))
+	if err != nil {
+		return fmt.Errorf("failed to save artifact: %w", err)
+	}
+
+	artifactType := metadata.Type
+	if artifactType == "" {
+		artifactType = "zip"
+	}
+
+	artifact, err := h.service.CreateArtifact(stream.Context(), &appplugin.CreateArtifactRequest{
+		ReleaseID:   metadata.ReleaseId,
+		OS:          metadata.Os,
+		Arch:        metadata.Arch,
+		Type:        artifactType,
+		Size:        size,
+		Checksum:    checksum,
+		StoragePath: storagePath,
+		Signature:   metadata.Signature,
+		KeyID:       metadata.KeyId,
+	})
+	if err != nil {
+		_ = h.storage.Delete(storagePath)
+		return fmt.Errorf("failed to create artifact: %w", err)
+	}
 
 	return stream.SendAndClose(&marketv1.UploadArtifactResponse{
-		// Artifact: artifact,
+		Artifact: toProtoArtifact(artifact),
 	})
 }
 
@@ -368,20 +445,139 @@ func (h *Handler) ListArtifacts(ctx context.Context, req *marketv1.ListArtifacts
 
 // DownloadArtifact handles DownloadArtifact gRPC stream request
 func (h *Handler) DownloadArtifact(req *marketv1.DownloadArtifactRequest, stream marketv1.PluginService_DownloadArtifactServer) error {
-	// TODO: Implement file streaming
-	// This would:
-	// 1. Get artifact from service
-	// 2. Open file from storage
-	// 3. Stream chunks to client
-	return fmt.Errorf("not implemented")
+	artifact, err := h.service.GetArtifact(stream.Context(), req.Id)
+	if err != nil {
+		return fmt.Errorf("failed to get artifact: %w", err)
+	}
+
+	file, err := h.storage.Get(artifact.StoragePath)
+	if err != nil {
+		return fmt.Errorf("failed to open artifact: %w", err)
+	}
+	defer file.Close()
+
+	buf := make([]byte, 64*1024)
+	for {
+		n, err := file.Read(buf)
+		if n > 0 {
+			if sendErr := stream.Send(&marketv1.DownloadArtifactResponse{Chunk: buf[:n]}); sendErr != nil {
+				return fmt.Errorf("failed to stream artifact: %w", sendErr)
+			}
+		}
+		if err == io.EOF {
+			return nil
+		}
+		if err != nil {
+			return fmt.Errorf("failed to read artifact: %w", err)
+		}
+	}
 }
 
 // DeleteArtifact handles DeleteArtifact gRPC request
 func (h *Handler) DeleteArtifact(ctx context.Context, req *marketv1.DeleteArtifactRequest) (*marketv1.DeleteArtifactResponse, error) {
-	err := h.service.DeleteArtifact(ctx, req.Id, req.Reason)
+	artifact, err := h.service.GetArtifact(ctx, req.Id)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get artifact: %w", err)
+	}
+
+	err = h.service.DeleteArtifact(ctx, req.Id, req.Reason)
 	if err != nil {
 		return nil, fmt.Errorf("failed to delete artifact: %w", err)
 	}
+	_ = h.storage.Delete(artifact.StoragePath)
 
 	return &marketv1.DeleteArtifactResponse{}, nil
+}
+
+// InstallPlugin handles InstallPlugin gRPC request.
+func (h *Handler) InstallPlugin(ctx context.Context, req *marketv1.InstallPluginRequest) (*marketv1.InstallPluginResponse, error) {
+	installed, err := h.service.InstallPlugin(contextWithClaimsUserID(ctx), req.PluginId)
+	if err != nil {
+		return nil, fmt.Errorf("failed to install plugin: %w", err)
+	}
+
+	return &marketv1.InstallPluginResponse{
+		InstalledPlugin: toProtoInstalledPlugin(installed),
+	}, nil
+}
+
+// UninstallPlugin handles UninstallPlugin gRPC request.
+func (h *Handler) UninstallPlugin(ctx context.Context, req *marketv1.UninstallPluginRequest) (*marketv1.UninstallPluginResponse, error) {
+	if err := h.service.UninstallPlugin(contextWithClaimsUserID(ctx), req.PluginId); err != nil {
+		return nil, fmt.Errorf("failed to uninstall plugin: %w", err)
+	}
+
+	return &marketv1.UninstallPluginResponse{}, nil
+}
+
+// ListInstalledPlugins handles ListInstalledPlugins gRPC request.
+func (h *Handler) ListInstalledPlugins(ctx context.Context, req *marketv1.ListInstalledPluginsRequest) (*marketv1.ListInstalledPluginsResponse, error) {
+	installations, total, err := h.service.ListInstalledPlugins(contextWithClaimsUserID(ctx), int(req.Limit), int(req.Offset))
+	if err != nil {
+		return nil, fmt.Errorf("failed to list installed plugins: %w", err)
+	}
+
+	protoInstallations := make([]*marketv1.InstalledPlugin, len(installations))
+	for i, installed := range installations {
+		protoInstallations[i] = toProtoInstalledPlugin(installed)
+	}
+
+	return &marketv1.ListInstalledPluginsResponse{
+		InstalledPlugins: protoInstallations,
+		Total:            total,
+	}, nil
+}
+
+func contextWithClaimsUserID(ctx context.Context) context.Context {
+	claims, ok := auth.GetClaims(ctx)
+	if !ok || claims.UserID == "" {
+		return ctx
+	}
+	return context.WithValue(ctx, "user_id", claims.UserID)
+}
+
+// CreatePublisher handles CreatePublisher gRPC request.
+func (h *Handler) CreatePublisher(ctx context.Context, req *marketv1.CreatePublisherRequest) (*marketv1.CreatePublisherResponse, error) {
+	pub, err := h.service.CreatePublisher(contextWithClaimsUserID(ctx), &appplugin.CreatePublisherRequest{
+		Name:        req.Name,
+		Description: req.Description,
+		WebsiteURL:  req.WebsiteUrl,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("failed to create publisher: %w", err)
+	}
+
+	return &marketv1.CreatePublisherResponse{
+		Publisher: toProtoPublisher(pub),
+	}, nil
+}
+
+// GetPublisher handles GetPublisher gRPC request.
+func (h *Handler) GetPublisher(ctx context.Context, req *marketv1.GetPublisherRequest) (*marketv1.GetPublisherResponse, error) {
+	pub, err := h.service.GetPublisher(ctx, req.Id)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get publisher: %w", err)
+	}
+
+	return &marketv1.GetPublisherResponse{
+		Publisher: toProtoPublisher(pub),
+	}, nil
+}
+
+// ListPublishers handles ListPublishers gRPC request.
+func (h *Handler) ListPublishers(ctx context.Context, req *marketv1.ListPublishersRequest) (*marketv1.ListPublishersResponse, error) {
+	publishers, total, err := h.service.ListPublishers(ctx, int(req.Limit), int(req.Offset))
+	if err != nil {
+		return nil, fmt.Errorf("failed to list publishers: %w", err)
+	}
+
+	protoPublishers := make([]*marketv1.Publisher, len(publishers))
+	for i, pub := range publishers {
+		protoPublishers[i] = toProtoPublisher(pub)
+	}
+
+	return &marketv1.ListPublishersResponse{
+		Publishers: protoPublishers,
+		Total:      total,
+	}, nil
 }

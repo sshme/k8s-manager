@@ -20,6 +20,7 @@ WORKDIR /app
 RUN apk --no-cache add ca-certificates
 
 COPY --from=builder /app/market/market-service .
+COPY --from=builder /app/market/migrations ./migrations
 
 EXPOSE 50051
 

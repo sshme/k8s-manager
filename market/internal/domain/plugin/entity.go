@@ -8,18 +8,18 @@ import (
 type PluginStatus string
 
 const (
-	PluginStatusActive   PluginStatus = "active"
-	PluginStatusHidden   PluginStatus = "hidden"
-	PluginStatusBlocked  PluginStatus = "blocked"
+	PluginStatusActive  PluginStatus = "active"
+	PluginStatusHidden  PluginStatus = "hidden"
+	PluginStatusBlocked PluginStatus = "blocked"
 )
 
 // TrustStatus represents the trust status of a plugin
 type TrustStatus string
 
 const (
-	TrustStatusOfficial    TrustStatus = "official"
-	TrustStatusVerified    TrustStatus = "verified"
-	TrustStatusCommunity   TrustStatus = "community"
+	TrustStatusOfficial  TrustStatus = "official"
+	TrustStatusVerified  TrustStatus = "verified"
+	TrustStatusCommunity TrustStatus = "community"
 )
 
 // Plugin represents a plugin entity
@@ -40,31 +40,39 @@ type Plugin struct {
 
 // Release represents a plugin release/version
 type Release struct {
-	ID                  int64
-	PluginID            int64
-	Version             string
-	PublishedAt         time.Time
-	Changelog           string
-	MinCLIVersion       string
-	MinK8sVersion       string
-	IsLatest            bool
-	CreatedAt           time.Time
-	UpdatedAt           time.Time
+	ID            int64
+	PluginID      int64
+	Version       string
+	PublishedAt   time.Time
+	Changelog     string
+	MinCLIVersion string
+	MinK8sVersion string
+	IsLatest      bool
+	CreatedAt     time.Time
+	UpdatedAt     time.Time
 }
 
-// Artifact represents a plugin artifact (executable file)
+// Artifact represents a plugin artifact zip archive.
 type Artifact struct {
 	ID          int64
 	ReleaseID   int64
 	OS          string // e.g., "linux", "darwin", "windows"
 	Arch        string // e.g., "amd64", "arm64"
-	Type        string // e.g., "binary"
+	Type        string // e.g., "zip"
 	Size        int64
 	Checksum    string // SHA-256
 	StoragePath string
 	Signature   string // optional signature
 	KeyID       string // optional signing key ID
 	CreatedAt   time.Time
+}
+
+// PluginInstallation represents a plugin installed by a user.
+type PluginInstallation struct {
+	UserID      string
+	PluginID    int64
+	InstalledAt time.Time
+	Plugin      *Plugin
 }
 
 // Publisher represents a plugin publisher/provider
@@ -76,4 +84,3 @@ type Publisher struct {
 	CreatedAt   time.Time
 	UpdatedAt   time.Time
 }
-

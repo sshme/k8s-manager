@@ -26,19 +26,33 @@ func (r *PostgresAuditRepository) Create(ctx context.Context, log *audit.AuditLo
 		VALUES ($1, $2, $3, $4, $5, $6, $7, NOW())
 		RETURNING id, created_at
 	`
-	
+
 	var createdAt time.Time
 	err := r.db.QueryRowContext(ctx, query,
 		log.EntityType, log.EntityID, log.Action, log.UserID,
-		log.Reason, log.OldValue, log.NewValue,
+		nullableString(log.Reason), nullableJSON(log.OldValue), nullableJSON(log.NewValue),
 	).Scan(&log.ID, &createdAt)
-	
+
 	if err != nil {
 		return fmt.Errorf("failed to create audit log: %w", err)
 	}
-	
+
 	log.CreatedAt = createdAt
 	return nil
+}
+
+func nullableString(value string) any {
+	if value == "" {
+		return nil
+	}
+	return value
+}
+
+func nullableJSON(value string) any {
+	if value == "" {
+		return nil
+	}
+	return value
 }
 
 // List retrieves audit logs for an entity
@@ -53,7 +67,7 @@ func (r *PostgresAuditRepository) List(ctx context.Context, entityType string, e
 	if err != nil {
 		return nil, 0, fmt.Errorf("failed to count audit logs: %w", err)
 	}
-	
+
 	// Get audit logs
 	query := `
 		SELECT id, entity_type, entity_id, action, user_id, reason, old_value, new_value, created_at
@@ -62,13 +76,13 @@ func (r *PostgresAuditRepository) List(ctx context.Context, entityType string, e
 		ORDER BY created_at DESC
 		LIMIT $3 OFFSET $4
 	`
-	
+
 	rows, err := r.db.QueryContext(ctx, query, entityType, entityID, limit, offset)
 	if err != nil {
 		return nil, 0, fmt.Errorf("failed to list audit logs: %w", err)
 	}
 	defer rows.Close()
-	
+
 	var logs []*audit.AuditLog
 	for rows.Next() {
 		log := &audit.AuditLog{}
@@ -88,7 +102,6 @@ func (r *PostgresAuditRepository) List(ctx context.Context, entityType string, e
 		}
 		logs = append(logs, log)
 	}
-	
+
 	return logs, total, nil
 }
-

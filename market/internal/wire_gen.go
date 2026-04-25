@@ -13,10 +13,12 @@ import (
 	user2 "k8s-manager/market/internal/application/user"
 	"k8s-manager/market/internal/infrastructure/repository/artifact"
 	"k8s-manager/market/internal/infrastructure/repository/audit"
+	"k8s-manager/market/internal/infrastructure/repository/installation"
 	"k8s-manager/market/internal/infrastructure/repository/plugin"
 	"k8s-manager/market/internal/infrastructure/repository/publisher"
 	"k8s-manager/market/internal/infrastructure/repository/release"
 	"k8s-manager/market/internal/infrastructure/repository/user"
+	"k8s-manager/market/internal/infrastructure/storage"
 	"k8s-manager/market/internal/presentation/grpc"
 	plugin3 "k8s-manager/market/internal/presentation/grpc/plugin"
 	user3 "k8s-manager/market/internal/presentation/grpc/user"
@@ -32,11 +34,16 @@ func InitializeApp(db *sql.DB, grpcPort int, storagePath string) (*App, error) {
 	postgresPluginRepository := plugin.NewPostgresPluginRepository(db)
 	postgresReleaseRepository := release.NewPostgresReleaseRepository(db)
 	postgresArtifactRepository := artifact.NewPostgresArtifactRepository(db)
+	postgresInstallationRepository := installation.NewPostgresInstallationRepository(db)
 	postgresPublisherRepository := publisher.NewPostgresPublisherRepository(db)
 	postgresAuditRepository := audit.NewPostgresAuditRepository(db)
 	auditService := audit2.NewService(postgresAuditRepository)
-	pluginService := plugin2.NewService(postgresPluginRepository, postgresReleaseRepository, postgresArtifactRepository, postgresPublisherRepository, auditService)
-	pluginHandler := plugin3.NewHandler(pluginService)
+	pluginService := plugin2.NewService(postgresPluginRepository, postgresReleaseRepository, postgresArtifactRepository, postgresInstallationRepository, postgresPublisherRepository, auditService)
+	artifactStorage, err := storage.NewArtifactStorage(storagePath)
+	if err != nil {
+		return nil, err
+	}
+	pluginHandler := plugin3.NewHandler(pluginService, artifactStorage)
 	server := grpc.NewServer(grpcPort, handler, pluginHandler)
 	app := NewApp(server)
 	return app, nil

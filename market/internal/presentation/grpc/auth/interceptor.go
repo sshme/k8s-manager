@@ -46,3 +46,48 @@ func UnaryAuthInterceptor(rules map[string]Rule, parseToken TokenParser) grpc.Un
 		return handler(ctx, req)
 	}
 }
+
+func StreamAuthInterceptor(rules map[string]Rule, parseToken TokenParser) grpc.StreamServerInterceptor {
+	return func(
+		srv any,
+		stream grpc.ServerStream,
+		info *grpc.StreamServerInfo,
+		handler grpc.StreamHandler,
+	) error {
+		rule, ok := rules[info.FullMethod]
+		if !ok {
+			rule = Rule{}
+		}
+
+		ctx := stream.Context()
+		token, err := ExtractBearerToken(ctx)
+		if err != nil {
+			if rule.Public {
+				return handler(srv, stream)
+			}
+			return status.Error(codes.Unauthenticated, "missing token")
+		}
+
+		claims, err := parseToken(ctx, token)
+		if err != nil {
+			if rule.Public {
+				return handler(srv, stream)
+			}
+			return status.Error(codes.Unauthenticated, "invalid token")
+		}
+
+		return handler(srv, &authServerStream{
+			ServerStream: stream,
+			ctx:          WithClaims(ctx, claims),
+		})
+	}
+}
+
+type authServerStream struct {
+	grpc.ServerStream
+	ctx context.Context
+}
+
+func (s *authServerStream) Context() context.Context {
+	return s.ctx
+}

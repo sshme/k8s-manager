@@ -1,10 +1,12 @@
 package main
 
 import (
+	"context"
 	"flag"
 	"log"
 	"os"
 	"strconv"
+	"time"
 
 	"k8s-manager/market/internal"
 	"k8s-manager/market/internal/infrastructure/database"
@@ -22,6 +24,7 @@ func main() {
 
 	grpcPort := flag.Int("grpc-port", getEnvInt("GRPC_PORT", 50051), "gRPC server port")
 	storagePath := flag.String("storage-path", getEnv("STORAGE_PATH", "./storage"), "Artifact storage path")
+	migrationsPath := flag.String("migrations-path", getEnv("MIGRATIONS_PATH", "./migrations"), "SQL migrations directory")
 
 	flag.Parse()
 
@@ -32,6 +35,13 @@ func main() {
 	defer db.Close()
 
 	log.Println("Database connection established")
+
+	migrationCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	if err := database.RunMigrations(migrationCtx, db.DB, *migrationsPath); err != nil {
+		log.Fatalf("Failed to run migrations: %v", err)
+	}
+	log.Println("Database migrations applied")
 
 	app, err := internal.InitializeApp(db.DB, *grpcPort, *storagePath)
 	if err != nil {

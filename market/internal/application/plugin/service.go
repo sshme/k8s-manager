@@ -25,6 +25,7 @@ type Service struct {
 	pluginRepo    plugin.PluginRepository
 	releaseRepo   plugin.ReleaseRepository
 	artifactRepo  plugin.ArtifactRepository
+	installRepo   plugin.InstallationRepository
 	publisherRepo plugin.PublisherRepository
 	auditService  appaudit.AuditLogger
 }
@@ -34,6 +35,7 @@ func NewService(
 	pluginRepo plugin.PluginRepository,
 	releaseRepo plugin.ReleaseRepository,
 	artifactRepo plugin.ArtifactRepository,
+	installRepo plugin.InstallationRepository,
 	publisherRepo plugin.PublisherRepository,
 	auditService appaudit.AuditLogger,
 ) *Service {
@@ -41,6 +43,7 @@ func NewService(
 		pluginRepo:    pluginRepo,
 		releaseRepo:   releaseRepo,
 		artifactRepo:  artifactRepo,
+		installRepo:   installRepo,
 		publisherRepo: publisherRepo,
 		auditService:  auditService,
 	}
@@ -137,6 +140,7 @@ func (s *Service) GetPlugin(ctx context.Context, id int64) (*plugin.Plugin, erro
 // ListPluginsRequest represents a request to list plugins
 type ListPluginsRequest struct {
 	Name        string
+	Query       string
 	Category    string
 	PublisherID int64
 	TrustStatus plugin.TrustStatus
@@ -156,6 +160,7 @@ func (s *Service) ListPlugins(ctx context.Context, req *ListPluginsRequest) ([]*
 
 	filter := &plugin.PluginFilter{
 		Name:        req.Name,
+		Query:       req.Query,
 		Category:    req.Category,
 		PublisherID: req.PublisherID,
 		TrustStatus: req.TrustStatus,
@@ -386,7 +391,7 @@ func (s *Service) CreateArtifact(ctx context.Context, req *CreateArtifactRequest
 	}
 
 	if art.Type == "" {
-		art.Type = "binary"
+		art.Type = "zip"
 	}
 
 	created, err := s.artifactRepo.Create(ctx, art)
@@ -454,4 +459,128 @@ func (s *Service) GetArtifactByPlatform(ctx context.Context, releaseID int64, os
 		return nil, ErrArtifactNotFound
 	}
 	return art, nil
+}
+
+// InstallPlugin installs a plugin for the current user.
+func (s *Service) InstallPlugin(ctx context.Context, pluginID int64) (*plugin.PluginInstallation, error) {
+	userID := s.getUserID(ctx)
+	if userID == "" {
+		return nil, fmt.Errorf("%w: user id is required", ErrInvalidInput)
+	}
+
+	p, err := s.pluginRepo.GetByID(ctx, pluginID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get plugin: %w", err)
+	}
+	if p == nil {
+		return nil, ErrPluginNotFound
+	}
+
+	installed, err := s.installRepo.Install(ctx, userID, pluginID)
+	if err != nil {
+		return nil, err
+	}
+	installed.Plugin = p
+
+	if userID != "" {
+		s.auditService.LogCreate(ctx, "plugin_installation", pluginID, userID, installed)
+	}
+
+	return installed, nil
+}
+
+// UninstallPlugin removes an installed plugin from the current user's library.
+func (s *Service) UninstallPlugin(ctx context.Context, pluginID int64) error {
+	userID := s.getUserID(ctx)
+	if userID == "" {
+		return fmt.Errorf("%w: user id is required", ErrInvalidInput)
+	}
+
+	if err := s.installRepo.Uninstall(ctx, userID, pluginID); err != nil {
+		return err
+	}
+
+	s.auditService.LogDelete(ctx, "plugin_installation", pluginID, userID, "user removed plugin", nil)
+	return nil
+}
+
+// ListInstalledPlugins lists plugins installed by the current user.
+func (s *Service) ListInstalledPlugins(ctx context.Context, limit, offset int) ([]*plugin.PluginInstallation, int64, error) {
+	userID := s.getUserID(ctx)
+	if userID == "" {
+		return nil, 0, fmt.Errorf("%w: user id is required", ErrInvalidInput)
+	}
+	if limit <= 0 {
+		limit = 20
+	}
+	if limit > 100 {
+		limit = 100
+	}
+
+	return s.installRepo.ListByUserID(ctx, userID, limit, offset)
+}
+
+// CreatePublisherRequest represents a request to create or reuse a publisher.
+type CreatePublisherRequest struct {
+	Name        string
+	Description string
+	WebsiteURL  string
+}
+
+// CreatePublisher creates a publisher. If a publisher with this name already
+// exists, it is returned so CLI publishing flows stay idempotent.
+func (s *Service) CreatePublisher(ctx context.Context, req *CreatePublisherRequest) (*plugin.Publisher, error) {
+	if req.Name == "" {
+		return nil, fmt.Errorf("%w: publisher name is required", ErrInvalidInput)
+	}
+
+	existing, err := s.publisherRepo.GetByName(ctx, req.Name)
+	if err != nil {
+		return nil, fmt.Errorf("failed to check existing publisher: %w", err)
+	}
+	if existing != nil {
+		return existing, nil
+	}
+
+	pub := &plugin.Publisher{
+		Name:        req.Name,
+		Description: req.Description,
+		WebsiteURL:  req.WebsiteURL,
+	}
+
+	created, err := s.publisherRepo.Create(ctx, pub)
+	if err != nil {
+		return nil, err
+	}
+
+	userID := s.getUserID(ctx)
+	if userID != "" {
+		s.auditService.LogCreate(ctx, "publisher", created.ID, userID, created)
+	}
+
+	return created, nil
+}
+
+// GetPublisher retrieves a publisher by ID.
+func (s *Service) GetPublisher(ctx context.Context, id int64) (*plugin.Publisher, error) {
+	pub, err := s.publisherRepo.GetByID(ctx, id)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get publisher: %w", err)
+	}
+	if pub == nil {
+		return nil, ErrPublisherNotFound
+	}
+	return pub, nil
+}
+
+// ListPublishers retrieves publishers.
+func (s *Service) ListPublishers(ctx context.Context, limit, offset int) ([]*plugin.Publisher, int64, error) {
+	if limit <= 0 {
+		limit = 20
+	}
+	if limit > 100 {
+		limit = 100
+	}
+
+	return s.publisherRepo.List(ctx, limit, offset)
 }

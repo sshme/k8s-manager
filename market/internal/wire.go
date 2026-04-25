@@ -14,14 +14,16 @@ import (
 	domainaudit "k8s-manager/market/internal/domain/audit"
 	domainplugin "k8s-manager/market/internal/domain/plugin"
 	domainuser "k8s-manager/market/internal/domain/user"
-	auditrepo "k8s-manager/market/internal/infrastructure/repository/audit"
 	artifactrepo "k8s-manager/market/internal/infrastructure/repository/artifact"
+	auditrepo "k8s-manager/market/internal/infrastructure/repository/audit"
+	installationrepo "k8s-manager/market/internal/infrastructure/repository/installation"
 	pluginrepo "k8s-manager/market/internal/infrastructure/repository/plugin"
 	publisherrepo "k8s-manager/market/internal/infrastructure/repository/publisher"
 	releaserepo "k8s-manager/market/internal/infrastructure/repository/release"
 	userrepo "k8s-manager/market/internal/infrastructure/repository/user"
-	grpcplugin "k8s-manager/market/internal/presentation/grpc/plugin"
+	"k8s-manager/market/internal/infrastructure/storage"
 	grpcserver "k8s-manager/market/internal/presentation/grpc"
+	grpcplugin "k8s-manager/market/internal/presentation/grpc/plugin"
 	grpcuser "k8s-manager/market/internal/presentation/grpc/user"
 )
 
@@ -31,15 +33,20 @@ func InitializeApp(db *sql.DB, grpcPort int, storagePath string) (*App, error) {
 		// Repositories
 		pluginrepo.NewPostgresPluginRepository,
 		wire.Bind(new(domainplugin.PluginRepository), new(*pluginrepo.PostgresPluginRepository)),
-		
+
 		releaserepo.NewPostgresReleaseRepository,
 		wire.Bind(new(domainplugin.ReleaseRepository), new(*releaserepo.PostgresReleaseRepository)),
-		
+
 		artifactrepo.NewPostgresArtifactRepository,
 		wire.Bind(new(domainplugin.ArtifactRepository), new(*artifactrepo.PostgresArtifactRepository)),
-		
+
+		installationrepo.NewPostgresInstallationRepository,
+		wire.Bind(new(domainplugin.InstallationRepository), new(*installationrepo.PostgresInstallationRepository)),
+
 		publisherrepo.NewPostgresPublisherRepository,
 		wire.Bind(new(domainplugin.PublisherRepository), new(*publisherrepo.PostgresPublisherRepository)),
+
+		storage.NewArtifactStorage,
 
 		auditrepo.NewPostgresAuditRepository,
 		wire.Bind(new(domainaudit.AuditRepository), new(*auditrepo.PostgresAuditRepository)),
@@ -66,4 +73,3 @@ func InitializeApp(db *sql.DB, grpcPort int, storagePath string) (*App, error) {
 
 	return nil, nil
 }
-

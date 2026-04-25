@@ -5,6 +5,7 @@ import (
 	"crypto/tls"
 	"fmt"
 	"net/http"
+	"slices"
 	"sync"
 	"time"
 
@@ -12,6 +13,7 @@ import (
 )
 
 type TokenClaims struct {
+	Issuer            string `json:"iss"`
 	Sub               string `json:"sub"`
 	Email             string `json:"email"`
 	PreferredUsername string `json:"preferred_username"`
@@ -21,16 +23,26 @@ type OIDCClient struct {
 	issuerURL       string
 	clientID        string
 	insecureSkipTLS bool
+	tokenIssuers    []string
 
 	mu       sync.RWMutex
 	verifier *oidc.IDTokenVerifier
 }
 
-func NewOIDCClient(issuerURL, clientID string, insecureSkipTLS bool) *OIDCClient {
+func NewOIDCClient(issuerURL, clientID string, insecureSkipTLS bool, tokenIssuers ...string) *OIDCClient {
+	issuers := make([]string, 0, len(tokenIssuers)+1)
+	issuers = append(issuers, issuerURL)
+	for _, issuer := range tokenIssuers {
+		if issuer != "" && !slices.Contains(issuers, issuer) {
+			issuers = append(issuers, issuer)
+		}
+	}
+
 	return &OIDCClient{
 		issuerURL:       issuerURL,
 		clientID:        clientID,
 		insecureSkipTLS: insecureSkipTLS,
+		tokenIssuers:    issuers,
 	}
 }
 
@@ -48,6 +60,9 @@ func (c *OIDCClient) ValidateToken(ctx context.Context, rawToken string) (*Token
 	var claims TokenClaims
 	if err := token.Claims(&claims); err != nil {
 		return nil, fmt.Errorf("decode claims: %w", err)
+	}
+	if !slices.Contains(c.tokenIssuers, claims.Issuer) {
+		return nil, fmt.Errorf("unexpected token issuer %q", claims.Issuer)
 	}
 
 	return &claims, nil
@@ -78,6 +93,7 @@ func (c *OIDCClient) verifierFor(ctx context.Context) (*oidc.IDTokenVerifier, er
 	verifier = provider.Verifier(&oidc.Config{
 		ClientID:          c.clientID,
 		SkipClientIDCheck: true,
+		SkipIssuerCheck:   len(c.tokenIssuers) > 1,
 	})
 
 	c.mu.Lock()

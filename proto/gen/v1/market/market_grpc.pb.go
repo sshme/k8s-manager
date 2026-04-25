@@ -34,6 +34,9 @@ const (
 	PluginService_ListArtifacts_FullMethodName         = "/market.v1.PluginService/ListArtifacts"
 	PluginService_DownloadArtifact_FullMethodName      = "/market.v1.PluginService/DownloadArtifact"
 	PluginService_DeleteArtifact_FullMethodName        = "/market.v1.PluginService/DeleteArtifact"
+	PluginService_InstallPlugin_FullMethodName         = "/market.v1.PluginService/InstallPlugin"
+	PluginService_UninstallPlugin_FullMethodName       = "/market.v1.PluginService/UninstallPlugin"
+	PluginService_ListInstalledPlugins_FullMethodName  = "/market.v1.PluginService/ListInstalledPlugins"
 )
 
 // PluginServiceClient is the client API for PluginService service.
@@ -60,6 +63,10 @@ type PluginServiceClient interface {
 	ListArtifacts(ctx context.Context, in *ListArtifactsRequest, opts ...grpc.CallOption) (*ListArtifactsResponse, error)
 	DownloadArtifact(ctx context.Context, in *DownloadArtifactRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[DownloadArtifactResponse], error)
 	DeleteArtifact(ctx context.Context, in *DeleteArtifactRequest, opts ...grpc.CallOption) (*DeleteArtifactResponse, error)
+	// User plugin library
+	InstallPlugin(ctx context.Context, in *InstallPluginRequest, opts ...grpc.CallOption) (*InstallPluginResponse, error)
+	UninstallPlugin(ctx context.Context, in *UninstallPluginRequest, opts ...grpc.CallOption) (*UninstallPluginResponse, error)
+	ListInstalledPlugins(ctx context.Context, in *ListInstalledPluginsRequest, opts ...grpc.CallOption) (*ListInstalledPluginsResponse, error)
 }
 
 type pluginServiceClient struct {
@@ -232,6 +239,36 @@ func (c *pluginServiceClient) DeleteArtifact(ctx context.Context, in *DeleteArti
 	return out, nil
 }
 
+func (c *pluginServiceClient) InstallPlugin(ctx context.Context, in *InstallPluginRequest, opts ...grpc.CallOption) (*InstallPluginResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(InstallPluginResponse)
+	err := c.cc.Invoke(ctx, PluginService_InstallPlugin_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *pluginServiceClient) UninstallPlugin(ctx context.Context, in *UninstallPluginRequest, opts ...grpc.CallOption) (*UninstallPluginResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(UninstallPluginResponse)
+	err := c.cc.Invoke(ctx, PluginService_UninstallPlugin_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *pluginServiceClient) ListInstalledPlugins(ctx context.Context, in *ListInstalledPluginsRequest, opts ...grpc.CallOption) (*ListInstalledPluginsResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ListInstalledPluginsResponse)
+	err := c.cc.Invoke(ctx, PluginService_ListInstalledPlugins_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // PluginServiceServer is the server API for PluginService service.
 // All implementations must embed UnimplementedPluginServiceServer
 // for forward compatibility.
@@ -256,6 +293,10 @@ type PluginServiceServer interface {
 	ListArtifacts(context.Context, *ListArtifactsRequest) (*ListArtifactsResponse, error)
 	DownloadArtifact(*DownloadArtifactRequest, grpc.ServerStreamingServer[DownloadArtifactResponse]) error
 	DeleteArtifact(context.Context, *DeleteArtifactRequest) (*DeleteArtifactResponse, error)
+	// User plugin library
+	InstallPlugin(context.Context, *InstallPluginRequest) (*InstallPluginResponse, error)
+	UninstallPlugin(context.Context, *UninstallPluginRequest) (*UninstallPluginResponse, error)
+	ListInstalledPlugins(context.Context, *ListInstalledPluginsRequest) (*ListInstalledPluginsResponse, error)
 	mustEmbedUnimplementedPluginServiceServer()
 }
 
@@ -310,6 +351,15 @@ func (UnimplementedPluginServiceServer) DownloadArtifact(*DownloadArtifactReques
 }
 func (UnimplementedPluginServiceServer) DeleteArtifact(context.Context, *DeleteArtifactRequest) (*DeleteArtifactResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method DeleteArtifact not implemented")
+}
+func (UnimplementedPluginServiceServer) InstallPlugin(context.Context, *InstallPluginRequest) (*InstallPluginResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method InstallPlugin not implemented")
+}
+func (UnimplementedPluginServiceServer) UninstallPlugin(context.Context, *UninstallPluginRequest) (*UninstallPluginResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method UninstallPlugin not implemented")
+}
+func (UnimplementedPluginServiceServer) ListInstalledPlugins(context.Context, *ListInstalledPluginsRequest) (*ListInstalledPluginsResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method ListInstalledPlugins not implemented")
 }
 func (UnimplementedPluginServiceServer) mustEmbedUnimplementedPluginServiceServer() {}
 func (UnimplementedPluginServiceServer) testEmbeddedByValue()                       {}
@@ -584,6 +634,60 @@ func _PluginService_DeleteArtifact_Handler(srv interface{}, ctx context.Context,
 	return interceptor(ctx, in, info, handler)
 }
 
+func _PluginService_InstallPlugin_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(InstallPluginRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(PluginServiceServer).InstallPlugin(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: PluginService_InstallPlugin_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(PluginServiceServer).InstallPlugin(ctx, req.(*InstallPluginRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _PluginService_UninstallPlugin_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(UninstallPluginRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(PluginServiceServer).UninstallPlugin(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: PluginService_UninstallPlugin_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(PluginServiceServer).UninstallPlugin(ctx, req.(*UninstallPluginRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _PluginService_ListInstalledPlugins_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ListInstalledPluginsRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(PluginServiceServer).ListInstalledPlugins(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: PluginService_ListInstalledPlugins_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(PluginServiceServer).ListInstalledPlugins(ctx, req.(*ListInstalledPluginsRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // PluginService_ServiceDesc is the grpc.ServiceDesc for PluginService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -642,6 +746,18 @@ var PluginService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "DeleteArtifact",
 			Handler:    _PluginService_DeleteArtifact_Handler,
+		},
+		{
+			MethodName: "InstallPlugin",
+			Handler:    _PluginService_InstallPlugin_Handler,
+		},
+		{
+			MethodName: "UninstallPlugin",
+			Handler:    _PluginService_UninstallPlugin_Handler,
+		},
+		{
+			MethodName: "ListInstalledPlugins",
+			Handler:    _PluginService_ListInstalledPlugins_Handler,
 		},
 	},
 	Streams: []grpc.StreamDesc{

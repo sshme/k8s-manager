@@ -75,6 +75,12 @@ message Artifact {
     string created_at   = 11;
 }
 
+// Plugin installed by a user
+message InstalledPlugin {
+    Plugin plugin       = 1;
+    string installed_at = 2;
+}
+
 // Plugin Service
 service PluginService {
     // Plugin management
@@ -97,6 +103,11 @@ service PluginService {
     rpc ListArtifacts(ListArtifactsRequest) returns (ListArtifactsResponse);
     rpc DownloadArtifact(DownloadArtifactRequest) returns (stream DownloadArtifactResponse);
     rpc DeleteArtifact(DeleteArtifactRequest) returns (DeleteArtifactResponse);
+
+    // User plugin library
+    rpc InstallPlugin(InstallPluginRequest) returns (InstallPluginResponse);
+    rpc UninstallPlugin(UninstallPluginRequest) returns (UninstallPluginResponse);
+    rpc ListInstalledPlugins(ListInstalledPluginsRequest) returns (ListInstalledPluginsResponse);
 }
 
 // Plugin requests/responses
@@ -131,6 +142,7 @@ message ListPluginsRequest {
     PluginStatus status       = 5;
     int32        limit         = 6;
     int32        offset       = 7;
+    string       query         = 8;
 }
 
 message ListPluginsResponse {
@@ -210,12 +222,13 @@ message UploadArtifactRequest {
 }
 
 message ArtifactMetadata {
-    int64  release_id = 1;
-    string os         = 2;
-    string arch       = 3;
-    string type       = 4;
-    string signature  = 5;
-    string key_id     = 6;
+    int64  release_id        = 1;
+    string os                = 2;
+    string arch              = 3;
+    string type              = 4;
+    string signature         = 5;
+    string key_id            = 6;
+    string original_filename = 7;
 }
 
 message UploadArtifactResponse {
@@ -260,6 +273,31 @@ message DeleteArtifactRequest {
 message DeleteArtifactResponse {
 }
 
+message InstallPluginRequest {
+    int64 plugin_id = 1;
+}
+
+message InstallPluginResponse {
+    InstalledPlugin installed_plugin = 1;
+}
+
+message UninstallPluginRequest {
+    int64 plugin_id = 1;
+}
+
+message UninstallPluginResponse {
+}
+
+message ListInstalledPluginsRequest {
+    int32 limit  = 1;
+    int32 offset = 2;
+}
+
+message ListInstalledPluginsResponse {
+    repeated InstalledPlugin installed_plugins = 1;
+    int64                    total             = 2;
+}
+
 // Publisher Service
 service PublisherService {
     rpc CreatePublisher(CreatePublisherRequest) returns (CreatePublisherResponse);
@@ -294,4 +332,3 @@ message ListPublishersResponse {
     repeated Publisher publishers = 1;
     int64             total       = 2;
 }
-
