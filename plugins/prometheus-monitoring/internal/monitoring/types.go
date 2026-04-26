@@ -5,9 +5,12 @@ const (
 	PluginName    = "Добавление Prometheus-мониторинга"
 	PluginVersion = "0.1.0"
 
-	DefaultMetricsPath    = "/metrics"
-	DefaultMetricsPort    = 9090
-	DefaultScrapeInterval = "30s"
+	DefaultMetricsPath         = "/metrics"
+	DefaultMetricsPort         = 9090
+	DefaultScrapeInterval      = "30s"
+	DefaultPrometheusName      = "k8s-manager-prometheus"
+	DefaultPrometheusNamespace = "monitoring"
+	DefaultPrometheusImage     = "prom/prometheus:v2.55.1"
 
 	PrometheusScrapeAnnotation = "prometheus.io/scrape"
 	PrometheusPortAnnotation   = "prometheus.io/port"
@@ -23,17 +26,21 @@ const (
 )
 
 type Config struct {
-	Command        string
-	Kubeconfig     string
-	Context        string
-	Namespace      string
-	Deployment     string
-	MetricsPath    string
-	MetricsPort    int
-	ScrapeInterval string
-	Output         string
-	Interactive    bool
-	DryRun         bool
+	Command             string
+	Kubeconfig          string
+	Context             string
+	Namespace           string
+	Deployment          string
+	MetricsPath         string
+	MetricsPort         int
+	ScrapeInterval      string
+	InstallPrometheus   bool
+	PrometheusName      string
+	PrometheusNamespace string
+	PrometheusImage     string
+	Output              string
+	Interactive         bool
+	DryRun              bool
 }
 
 type Manifest struct {
@@ -73,20 +80,31 @@ type KubernetesAccess struct {
 }
 
 type Plan struct {
-	Plugin              string      `json:"plugin"`
-	Namespace           string      `json:"namespace"`
-	Deployment          string      `json:"deployment"`
-	MetricsPath         string      `json:"metricsPath"`
-	MetricsPort         int         `json:"metricsPort"`
-	MetricsPortSource   string      `json:"metricsPortSource"`
-	ScrapeInterval      string      `json:"scrapeInterval"`
-	HasScrapeAnnotation bool        `json:"hasScrapeAnnotation"`
-	ServiceExists       bool        `json:"serviceExists"`
-	ServiceName         string      `json:"serviceName"`
-	ServicePortName     string      `json:"servicePortName"`
-	PrometheusOperator  bool        `json:"prometheusOperator"`
-	ServiceMonitorName  string      `json:"serviceMonitorName,omitempty"`
-	Operations          []Operation `json:"operations"`
+	Plugin              string            `json:"plugin"`
+	Namespace           string            `json:"namespace"`
+	Deployment          string            `json:"deployment"`
+	MetricsPath         string            `json:"metricsPath"`
+	MetricsPort         int               `json:"metricsPort"`
+	MetricsPortSource   string            `json:"metricsPortSource"`
+	ScrapeInterval      string            `json:"scrapeInterval"`
+	HasScrapeAnnotation bool              `json:"hasScrapeAnnotation"`
+	ServiceExists       bool              `json:"serviceExists"`
+	ServiceName         string            `json:"serviceName"`
+	ServicePortName     string            `json:"servicePortName"`
+	PrometheusOperator  bool              `json:"prometheusOperator"`
+	ServiceMonitorName  string            `json:"serviceMonitorName,omitempty"`
+	ManagedPrometheus   ManagedPrometheus `json:"managedPrometheus"`
+	Operations          []Operation       `json:"operations"`
+}
+
+type ManagedPrometheus struct {
+	Enabled     bool   `json:"enabled"`
+	Namespace   string `json:"namespace,omitempty"`
+	Name        string `json:"name,omitempty"`
+	Image       string `json:"image,omitempty"`
+	ServiceName string `json:"serviceName,omitempty"`
+	UIURL       string `json:"uiUrl,omitempty"`
+	PortForward string `json:"portForward,omitempty"`
 }
 
 type Operation struct {

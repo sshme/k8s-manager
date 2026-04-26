@@ -41,11 +41,15 @@ func Run(ctx context.Context, args []string, stdin io.Reader, stdout, stderr io.
 
 func parseConfig(args []string) (Config, error) {
 	cfg := Config{
-		Command:        args[0],
-		MetricsPath:    "",
-		ScrapeInterval: DefaultScrapeInterval,
-		Output:         "text",
-		Interactive:    true,
+		Command:             args[0],
+		MetricsPath:         "",
+		ScrapeInterval:      DefaultScrapeInterval,
+		InstallPrometheus:   true,
+		PrometheusName:      DefaultPrometheusName,
+		PrometheusNamespace: DefaultPrometheusNamespace,
+		PrometheusImage:     DefaultPrometheusImage,
+		Output:              "text",
+		Interactive:         true,
 	}
 
 	fs := flag.NewFlagSet(args[0], flag.ContinueOnError)
@@ -58,6 +62,13 @@ func parseConfig(args []string) (Config, error) {
 	fs.StringVar(&cfg.MetricsPath, "metrics-path", "", "metrics endpoint path")
 	fs.IntVar(&cfg.MetricsPort, "port", 0, "metrics endpoint port")
 	fs.StringVar(&cfg.ScrapeInterval, "scrape-interval", DefaultScrapeInterval, "ServiceMonitor scrape interval")
+	fs.StringVar(&cfg.PrometheusNamespace, "prometheus-namespace", DefaultPrometheusNamespace, "namespace for managed Prometheus")
+	fs.StringVar(&cfg.PrometheusName, "prometheus-name", DefaultPrometheusName, "name for managed Prometheus resources")
+	fs.StringVar(&cfg.PrometheusImage, "prometheus-image", DefaultPrometheusImage, "container image for managed Prometheus")
+	fs.BoolFunc("skip-prometheus-install", "do not create managed Prometheus UI", func(string) error {
+		cfg.InstallPrometheus = false
+		return nil
+	})
 	fs.StringVar(&cfg.Output, "output", "text", "output format: text or json")
 	fs.BoolFunc("non-interactive", "disable interactive prompts", func(string) error {
 		cfg.Interactive = false
@@ -75,6 +86,20 @@ func parseConfig(args []string) (Config, error) {
 	}
 	if cfg.Output != "text" && cfg.Output != "json" {
 		return Config{}, fmt.Errorf("unsupported output %q; use text or json", cfg.Output)
+	}
+	cfg.PrometheusName = strings.TrimSpace(cfg.PrometheusName)
+	cfg.PrometheusNamespace = strings.TrimSpace(cfg.PrometheusNamespace)
+	cfg.PrometheusImage = strings.TrimSpace(cfg.PrometheusImage)
+	if cfg.InstallPrometheus {
+		if cfg.PrometheusName == "" {
+			return Config{}, errors.New("--prometheus-name cannot be empty")
+		}
+		if cfg.PrometheusNamespace == "" {
+			return Config{}, errors.New("--prometheus-namespace cannot be empty")
+		}
+		if cfg.PrometheusImage == "" {
+			return Config{}, errors.New("--prometheus-image cannot be empty")
+		}
 	}
 	return cfg, nil
 }
@@ -229,6 +254,10 @@ Flags:
   --metrics-path <path>     metrics endpoint path (default /metrics)
   --port <number>           metrics endpoint port
   --scrape-interval <dur>   ServiceMonitor scrape interval (default 30s)
+  --prometheus-namespace    namespace for managed Prometheus (default monitoring)
+  --prometheus-name         managed Prometheus resource name (default k8s-manager-prometheus)
+  --prometheus-image        managed Prometheus image
+  --skip-prometheus-install skip managed Prometheus UI setup
   --output text|json        output format
   --non-interactive         disable prompts
   --dry-run                 preview apply without changes`)
@@ -241,7 +270,7 @@ func defaultManifest() Manifest {
 		Name:          PluginName,
 		Version:       PluginVersion,
 		Category:      "observability",
-		Description:   "Автоматически подключает сбор метрик Prometheus к выбранному Deployment: добавляет аннотации, настраивает Service и создает ServiceMonitor при наличии Prometheus Operator.",
+		Description:   "Автоматически подключает сбор метрик Prometheus к выбранному Deployment, настраивает Service/ServiceMonitor и поднимает managed Prometheus UI, доступный через port-forward.",
 		Runtime: Runtime{
 			Type:       "exec",
 			Entrypoint: "prometheus-monitoring",
@@ -255,11 +284,15 @@ func defaultManifest() Manifest {
 			{Name: "namespace", Flag: "--namespace", Description: "Namespace Kubernetes"},
 			{Name: "metricsPath", Flag: "--metrics-path", Default: DefaultMetricsPath, Description: "HTTP path endpoint метрик"},
 			{Name: "port", Flag: "--port", Description: "Порт метрик; если не задан, определяется автоматически"},
-			{Name: "scrapeInterval", Flag: "--scrape-interval", Default: DefaultScrapeInterval, Description: "Интервал scrape для ServiceMonitor"},
+			{Name: "scrapeInterval", Flag: "--scrape-interval", Default: DefaultScrapeInterval, Description: "Интервал scrape для ServiceMonitor и managed Prometheus"},
+			{Name: "prometheusNamespace", Flag: "--prometheus-namespace", Default: DefaultPrometheusNamespace, Description: "Namespace для managed Prometheus с UI"},
+			{Name: "prometheusName", Flag: "--prometheus-name", Default: DefaultPrometheusName, Description: "Имя managed Prometheus ресурсов"},
+			{Name: "prometheusImage", Flag: "--prometheus-image", Default: DefaultPrometheusImage, Description: "Container image для managed Prometheus"},
+			{Name: "skipPrometheusInstall", Flag: "--skip-prometheus-install", Default: "false", Description: "Не создавать managed Prometheus UI"},
 		},
 		Kubernetes: KubernetesAccess{
-			Reads:  []string{"deployments", "services", "customresourcedefinitions"},
-			Writes: []string{"deployments", "services", "servicemonitors.monitoring.coreos.com"},
+			Reads:  []string{"deployments", "services", "customresourcedefinitions", "namespaces"},
+			Writes: []string{"deployments", "services", "servicemonitors.monitoring.coreos.com", "namespaces", "serviceaccounts", "configmaps", "clusterroles", "clusterrolebindings"},
 		},
 	}
 }

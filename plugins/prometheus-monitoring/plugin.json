@@ -4,7 +4,7 @@
   "name": "Добавление Prometheus-мониторинга",
   "version": "0.1.0",
   "category": "observability",
-  "description": "Автоматически подключает сбор метрик Prometheus к выбранному Deployment: добавляет аннотации, настраивает Service и создает ServiceMonitor при наличии Prometheus Operator.",
+  "description": "Автоматически подключает сбор метрик Prometheus к выбранному Deployment, настраивает Service/ServiceMonitor и поднимает managed Prometheus UI, доступный через port-forward.",
   "runtime": {
     "type": "exec",
     "entrypoint": "prometheus-monitoring"
@@ -24,11 +24,14 @@
     {"name": "namespace", "flag": "--namespace", "required": false, "description": "Namespace Kubernetes"},
     {"name": "metricsPath", "flag": "--metrics-path", "default": "/metrics", "description": "HTTP path endpoint метрик"},
     {"name": "port", "flag": "--port", "required": false, "description": "Порт метрик; если не задан, определяется автоматически"},
-    {"name": "scrapeInterval", "flag": "--scrape-interval", "default": "30s", "description": "Интервал scrape для ServiceMonitor"}
+    {"name": "scrapeInterval", "flag": "--scrape-interval", "default": "30s", "description": "Интервал scrape для ServiceMonitor и managed Prometheus"},
+    {"name": "prometheusNamespace", "flag": "--prometheus-namespace", "default": "monitoring", "description": "Namespace для managed Prometheus"},
+    {"name": "prometheusName", "flag": "--prometheus-name", "default": "k8s-manager-prometheus", "description": "Имя managed Prometheus ресурсов"},
+    {"name": "prometheusImage", "flag": "--prometheus-image", "default": "prom/prometheus:v2.55.1", "description": "Container image для managed Prometheus"},
+    {"name": "skipPrometheusInstall", "flag": "--skip-prometheus-install", "default": "false", "description": "Не создавать managed Prometheus UI"}
   ],
   "kubernetes": {
-    "reads": ["deployments", "services", "customresourcedefinitions"],
-    "writes": ["deployments", "services", "servicemonitors.monitoring.coreos.com"]
+    "reads": ["deployments", "services", "customresourcedefinitions", "namespaces"],
+    "writes": ["deployments", "services", "servicemonitors.monitoring.coreos.com", "namespaces", "serviceaccounts", "configmaps", "clusterroles", "clusterrolebindings"]
   }
 }
-

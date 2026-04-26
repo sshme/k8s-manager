@@ -67,6 +67,9 @@ func BuildPlan(ctx context.Context, client *ClusterClient, cfg Config) (Plan, er
 	if operatorInstalled {
 		plan.ServiceMonitorName = serviceMonitorName
 	}
+	if cfg.InstallPrometheus {
+		plan.ManagedPrometheus = managedPrometheusPlan(cfg)
+	}
 
 	if deploymentNeedsAnnotationUpdate(*deployment, metricsPath, metricsPort) {
 		plan.Operations = append(plan.Operations, Operation{
@@ -150,6 +153,21 @@ func BuildPlan(ctx context.Context, client *ClusterClient, cfg Config) (Plan, er
 		})
 	}
 
+	if plan.ManagedPrometheus.Enabled {
+		plan.Operations = append(plan.Operations, Operation{
+			Action:    "apply",
+			Kind:      "PrometheusStack",
+			Namespace: plan.ManagedPrometheus.Namespace,
+			Name:      plan.ManagedPrometheus.Name,
+			Reason:    "ensure a Prometheus server with UI is available and scrapes services configured by this plugin",
+			Details: map[string]string{
+				"image":       plan.ManagedPrometheus.Image,
+				"service":     plan.ManagedPrometheus.ServiceName,
+				"portForward": plan.ManagedPrometheus.PortForward,
+			},
+		})
+	}
+
 	return plan, nil
 }
 
@@ -219,6 +237,8 @@ func serviceSelectsDeployment(service corev1.Service, deployment appsv1.Deployme
 func serviceNeedsUpdate(service corev1.Service, deploymentName string, metricsPort int) bool {
 	return service.Labels[PrometheusTargetLabel] != deploymentName ||
 		service.Labels[PluginIDLabel] != PluginID ||
+		service.Annotations[PrometheusScrapeAnnotation] != "true" ||
+		service.Annotations[PrometheusPortAnnotation] != strconv.Itoa(metricsPort) ||
 		!serviceHasMetricsPort(service, metricsPort)
 }
 
@@ -256,4 +276,17 @@ func metricsServiceName(deploymentName string) string {
 
 func serviceMonitorName(deploymentName string) string {
 	return deploymentName + "-prometheus"
+}
+
+func managedPrometheusPlan(cfg Config) ManagedPrometheus {
+	serviceName := cfg.PrometheusName
+	return ManagedPrometheus{
+		Enabled:     true,
+		Namespace:   cfg.PrometheusNamespace,
+		Name:        cfg.PrometheusName,
+		Image:       cfg.PrometheusImage,
+		ServiceName: serviceName,
+		UIURL:       "http://localhost:9090",
+		PortForward: fmt.Sprintf("kubectl port-forward -n %s svc/%s 9090:9090", cfg.PrometheusNamespace, serviceName),
+	}
 }
