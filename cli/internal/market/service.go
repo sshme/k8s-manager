@@ -139,14 +139,16 @@ func (s *Service) ListPlugins(ctx context.Context, query string) (*PluginList, e
 	if err != nil {
 		return nil, fmt.Errorf("list installed plugins: %w", err)
 	}
-	installedIDs := make(map[int64]bool, len(installedResp.InstalledPlugins))
+	installedAtByID := make(map[int64]string, len(installedResp.InstalledPlugins))
 	for _, installed := range installedResp.InstalledPlugins {
 		if installed.Plugin != nil {
-			installedIDs[installed.Plugin.Id] = true
+			installedAtByID[installed.Plugin.Id] = installed.InstalledAt
 		}
 	}
 	for i := range items {
-		items[i].Installed = installedIDs[items[i].ID]
+		installedAt, installed := installedAtByID[items[i].ID]
+		items[i].Installed = installed
+		items[i].InstalledAt = installedAt
 	}
 
 	return &PluginList{

@@ -74,7 +74,6 @@ services:
       DB_PASS: postgres
       DB_NAME: k8s_market
       HTTP_PORT: 8080
-      STORAGE_PATH: /app/storage
       STORAGE_BACKEND: s3
       S3_ENDPOINT: minio:9000
       S3_ACCESS_KEY: minioadmin
@@ -84,8 +83,6 @@ services:
       KEYCLOAK_ISSUER_URL: http://keycloak:8080/realms/k8s-manager
       KEYCLOAK_TOKEN_ISSUER_URL: http://localhost:8081/realms/k8s-manager
       KEYCLOAK_CLIENT_ID: k8s-manager-cli
-    volumes:
-      - market_storage:/app/storage
     depends_on:
       postgres:
         condition: service_healthy
@@ -99,5 +96,4 @@ services:
 
 volumes:
   postgres_data:
-  market_storage:
   minio_data:

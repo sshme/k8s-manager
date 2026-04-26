@@ -25,11 +25,11 @@ type FileStorage struct {
 
 // NewArtifactStorage creates storage from environment configuration.
 func NewArtifactStorage(fallbackPath string) (ArtifactStorage, error) {
-	if strings.EqualFold(os.Getenv("STORAGE_BACKEND"), "s3") {
-		return NewS3StorageFromEnv(context.Background())
+	if strings.EqualFold(os.Getenv("STORAGE_BACKEND"), "filesystem") {
+		return NewFileStorage(fallbackPath)
 	}
 
-	return NewFileStorage(fallbackPath)
+	return NewS3StorageFromEnv(context.Background())
 }
 
 // NewFileStorage creates a new filesystem storage

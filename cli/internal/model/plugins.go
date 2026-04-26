@@ -186,7 +186,7 @@ func (m model) renderPluginsContent() []string {
 		if plugin.Description != "" {
 			lines = append(lines, subtleStyle.Render("  "+truncate(plugin.Description, 96)))
 		}
-		if plugin.InstalledAt != "" {
+		if plugin.InstalledAt != "" && m.pluginSource == "search" {
 			lines = append(lines, installedStyle.Render("installed")+" "+subtleStyle.Render(plugin.InstalledAt))
 		}
 		lines = append(lines, "")
