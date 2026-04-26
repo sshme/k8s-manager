@@ -1,0 +1,34 @@
+{
+  "schemaVersion": "k8s-manager.plugin/v1",
+  "id": "observability.prometheus-monitoring",
+  "name": "Добавление Prometheus-мониторинга",
+  "version": "0.1.0",
+  "category": "observability",
+  "description": "Автоматически подключает сбор метрик Prometheus к выбранному Deployment: добавляет аннотации, настраивает Service и создает ServiceMonitor при наличии Prometheus Operator.",
+  "runtime": {
+    "type": "exec",
+    "entrypoint": "prometheus-monitoring"
+  },
+  "commands": [
+    {
+      "name": "plan",
+      "description": "Анализирует Deployment и показывает план изменений"
+    },
+    {
+      "name": "apply",
+      "description": "Применяет аннотации, Service и ServiceMonitor"
+    }
+  ],
+  "parameters": [
+    {"name": "deployment", "flag": "--deployment", "required": false, "description": "Целевой Deployment; если не задан, выбирается интерактивно"},
+    {"name": "namespace", "flag": "--namespace", "required": false, "description": "Namespace Kubernetes"},
+    {"name": "metricsPath", "flag": "--metrics-path", "default": "/metrics", "description": "HTTP path endpoint метрик"},
+    {"name": "port", "flag": "--port", "required": false, "description": "Порт метрик; если не задан, определяется автоматически"},
+    {"name": "scrapeInterval", "flag": "--scrape-interval", "default": "30s", "description": "Интервал scrape для ServiceMonitor"}
+  ],
+  "kubernetes": {
+    "reads": ["deployments", "services", "customresourcedefinitions"],
+    "writes": ["deployments", "services", "servicemonitors.monitoring.coreos.com"]
+  }
+}
+
