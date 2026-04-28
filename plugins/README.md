@@ -34,6 +34,7 @@ The `manifest` command returns:
   "schemaVersion": "k8s-manager.plugin/v1",
   "id": "observability.prometheus-monitoring",
   "name": "Prometheus monitoring",
+  "description": "plugin description",
   "version": "0.1.0",
   "category": "observability",
   "runtime": {"type": "exec", "entrypoint": "prometheus-monitoring"},

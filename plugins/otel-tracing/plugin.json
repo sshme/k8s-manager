@@ -1,0 +1,39 @@
+{
+  "schemaVersion": "k8s-manager.plugin/v1",
+  "id": "observability.otel-tracing",
+  "name": "Сбор и визуализация трасс OpenTelemetry",
+  "version": "0.1.0",
+  "category": "observability",
+  "description": "Настраивает выбранный Deployment на экспорт трасс OpenTelemetry по OTLP и поднимает managed Jaeger collector/UI либо подключает внешний collector endpoint.",
+  "runtime": {
+    "type": "exec",
+    "entrypoint": "otel-tracing"
+  },
+  "commands": [
+    {
+      "name": "plan",
+      "description": "Анализирует Deployment и показывает план трассировки"
+    },
+    {
+      "name": "apply",
+      "description": "Применяет OTEL env vars и managed Jaeger"
+    }
+  ],
+  "parameters": [
+    {"name": "deployment", "flag": "--deployment", "required": false, "description": "Целевой Deployment; если не задан, выбирается интерактивно"},
+    {"name": "namespace", "flag": "--namespace", "required": false, "description": "Namespace Kubernetes"},
+    {"name": "container", "flag": "--container", "required": false, "description": "Целевой container; если не задан, настраиваются все containers Deployment"},
+    {"name": "serviceName", "flag": "--service-name", "required": false, "description": "Значение OTEL_SERVICE_NAME; по умолчанию имя Deployment"},
+    {"name": "collectorEndpoint", "flag": "--collector-endpoint", "required": false, "description": "OTLP endpoint; если managed Jaeger включен, вычисляется автоматически"},
+    {"name": "protocol", "flag": "--protocol", "default": "grpc", "description": "OTLP protocol: grpc или http/protobuf"},
+    {"name": "samplingRatio", "flag": "--sampling-ratio", "default": "1.0", "description": "Доля трасс для parentbased_traceidratio sampler"},
+    {"name": "jaegerNamespace", "flag": "--jaeger-namespace", "default": "tracing", "description": "Namespace для managed Jaeger"},
+    {"name": "jaegerName", "flag": "--jaeger-name", "default": "k8s-manager-jaeger", "description": "Имя managed Jaeger ресурсов"},
+    {"name": "jaegerImage", "flag": "--jaeger-image", "default": "jaegertracing/all-in-one:1.62.0", "description": "Container image для managed Jaeger"},
+    {"name": "skipJaegerInstall", "flag": "--skip-jaeger-install", "default": "false", "description": "Не создавать managed Jaeger, использовать внешний OTLP collector"}
+  ],
+  "kubernetes": {
+    "reads": ["deployments", "namespaces"],
+    "writes": ["deployments", "namespaces", "services"]
+  }
+}
