@@ -7,6 +7,7 @@ import (
 	"encoding/base64"
 	"errors"
 	"fmt"
+	"io"
 	"net"
 	"net/http"
 	"net/url"
@@ -150,6 +151,89 @@ func (s *Service) AttachToken(ctx context.Context) (string, error) {
 	}
 
 	return session.AccessToken, nil
+}
+
+type RevocationFailedError struct {
+	Err error
+}
+
+func (e *RevocationFailedError) Error() string {
+	return fmt.Sprintf("server-side revocation failed: %v", e.Err)
+}
+
+func (e *RevocationFailedError) Unwrap() error { return e.Err }
+
+// Logout завершает сессию и локально (удаляет keyring-запись и зашифрованный
+// файл сессии), и на OIDC-сервере.
+func (s *Service) Logout(ctx context.Context) error {
+	session, err := s.store.Load()
+	if err != nil {
+		if errors.Is(err, ErrSessionNotFound) {
+			return nil
+		}
+		return fmt.Errorf("load session for logout: %w", err)
+	}
+
+	revokeErr := s.revokeRefreshToken(ctx, session.RefreshToken)
+
+	if err := s.store.Delete(); err != nil {
+		return fmt.Errorf("delete local session: %w", err)
+	}
+
+	if revokeErr != nil {
+		return &RevocationFailedError{Err: revokeErr}
+	}
+	return nil
+}
+
+// revokeRefreshToken отправляет refresh-токен на OIDC-эндпоинт.
+// Адрес эндпоинта берётся из discovery Keycloak.
+func (s *Service) revokeRefreshToken(ctx context.Context, refreshToken string) error {
+	if refreshToken == "" {
+		return errors.New("no refresh token to revoke")
+	}
+
+	provider, _, err := s.providerConfig(ctx)
+	if err != nil {
+		return err
+	}
+
+	var meta struct {
+		RevocationEndpoint string `json:"revocation_endpoint"`
+	}
+	if err := provider.Claims(&meta); err != nil {
+		return fmt.Errorf("read provider metadata: %w", err)
+	}
+	if meta.RevocationEndpoint == "" {
+		return errors.New("provider does not advertise revocation_endpoint")
+	}
+
+	form := url.Values{}
+	form.Set("client_id", s.cfg.ClientID)
+	form.Set("token", refreshToken)
+	form.Set("token_type_hint", "refresh_token")
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost,
+		meta.RevocationEndpoint, strings.NewReader(form.Encode()))
+	if err != nil {
+		return fmt.Errorf("build revocation request: %w", err)
+	}
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req.Header.Set("Accept", "application/json")
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return fmt.Errorf("call revocation endpoint: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode == http.StatusOK {
+		return nil
+	}
+
+	body, _ := io.ReadAll(io.LimitReader(resp.Body, 1024))
+	return fmt.Errorf("revocation endpoint returned %s: %s",
+		resp.Status, strings.TrimSpace(string(body)))
 }
 
 func (s *Service) providerConfig(ctx context.Context) (*oidc.Provider, *oauth2.Config, error) {

@@ -1,24 +1,10 @@
-package model
+package plugins
 
 import (
 	"strings"
 
-	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 )
-
-func (m model) selectedTab() string {
-	if m.cursor < 0 || m.cursor >= len(m.items) {
-		return ""
-	}
-
-	return m.items[m.cursor]
-}
-
-func (m *model) loadPlugins() tea.Cmd {
-	m.pluginLoading = true
-	return loadPluginsCmd(m.marketService, m.pluginSearch)
-}
 
 func nonEmpty(values ...string) []string {
 	items := make([]string, 0, len(values))

@@ -5,109 +5,84 @@ import (
 	"strings"
 
 	"k8s-manager/cli/internal/model/components"
+	"k8s-manager/cli/internal/model/styles"
 
 	"github.com/charmbracelet/lipgloss"
 )
 
 func (m model) View() string {
 	if m.width == 0 || m.height == 0 {
-		return warningStyle.Render("Loading layout...")
+		return styles.Warning.Render("Loading layout...")
 	}
 
-	headerFrameW, _ := headerStyle.GetFrameSize()
-	footerFrameW, _ := footerStyle.GetFrameSize()
+	headerFrameW, _ := styles.Header.GetFrameSize()
+	footerFrameW, _ := styles.Footer.GetFrameSize()
+	sidebarFrameW, sidebarFrameH := styles.Sidebar.GetFrameSize()
+	contentFrameW, contentFrameH := styles.Content.GetFrameSize()
 
-	sidebarFrameW, sidebarFrameH := sidebarStyle.GetFrameSize()
-	contentFrameW, contentFrameH := contentStyle.GetFrameSize()
-
-	header := headerStyle.
+	header := styles.Header.
 		Width(max(0, m.width-headerFrameW)).
 		Render(m.renderHeader(max(0, m.width-headerFrameW)))
 
-	footer := footerStyle.
+	footer := styles.Footer.
 		Width(max(0, m.width-footerFrameW)).
 		Render(m.renderFooter())
 
 	headerHeight := lipgloss.Height(header)
 	footerHeight := lipgloss.Height(footer)
-
 	bodyHeight := max(m.height-headerHeight-footerHeight, 3)
 
-	sidebarWidth := 24
+	sidebarWidth := 18
 	contentWidth := max(m.width-sidebarWidth, 20)
 
-	var sidebarLines []string
-	sidebarLines = append(sidebarLines, titleStyle.Render("Tabs"), "")
-
-	for i, item := range m.items {
-		prefix := "  "
-		style := normalItemStyle
-
-		if i == m.cursor {
-			prefix = "> "
-			style = selectedItemStyle
-		}
-
-		sidebarLines = append(sidebarLines, style.Render(prefix+item))
-	}
-
-	sidebar := sidebarStyle.
+	sidebar := styles.Sidebar.
 		Width(max(0, sidebarWidth-sidebarFrameW)).
 		Height(max(0, bodyHeight-sidebarFrameH)).
-		Render(strings.Join(sidebarLines, "\n"))
+		Render(m.renderSidebar())
 
-	selected := m.items[m.cursor]
-	contentText := m.renderContent(selected)
-	if selected == "Plugins" && m.pluginWizard.open {
-		contentText = []string{m.renderPluginWizardModal(max(20, contentWidth-contentFrameW), max(8, bodyHeight-contentFrameH))}
-	}
-
-	content := contentStyle.
-		Width(max(0, contentWidth-contentFrameW)).
-		Height(max(0, bodyHeight-contentFrameH)).
-		Render(strings.Join(contentText, "\n"))
-
-	body := lipgloss.JoinHorizontal(
-		lipgloss.Top,
-		sidebar,
-		content,
-	)
+	bodyWidth := max(0, contentWidth-contentFrameW)
+	bodyInnerHeight := max(0, bodyHeight-contentFrameH)
+	body := styles.Content.
+		Width(bodyWidth).
+		Height(bodyInnerHeight).
+		Render(m.tabs[m.active].View(bodyWidth, bodyInnerHeight))
 
 	return lipgloss.JoinVertical(
 		lipgloss.Left,
 		header,
-		body,
+		lipgloss.JoinHorizontal(lipgloss.Top, sidebar, body),
 		footer,
 	)
 }
 
-func (m model) renderHeader(width int) string {
-	left := titleStyle.Render("k8s-manager") + subtleStyle.Render(" | context: dev-cluster | namespace: default")
-	right := components.Auth{Username: m.profileLabel()}.View()
+func (m model) renderSidebar() string {
+	lines := []string{styles.Title.Render("Tabs"), ""}
+	for i, t := range m.tabs {
+		prefix := "  "
+		style := styles.NormalItem
+		if i == m.active {
+			prefix = "> "
+			style = styles.SelectedItem
+		}
+		lines = append(lines, style.Render(prefix+t.Title()))
+	}
+	return strings.Join(lines, "\n")
+}
 
+func (m model) renderHeader(width int) string {
+	left := styles.Title.Render("k8s-manager") + styles.Subtle.Render(" | context: dev-cluster | namespace: default")
+	right := components.Auth{Username: m.profileLabel()}.View()
 	padding := max(1, width-lipgloss.Width(left)-lipgloss.Width(right))
 	return left + strings.Repeat(" ", padding) + right
 }
 
 func (m model) renderFooter() string {
 	if m.commandMode {
-		return searchStyle.Render(":") + m.commandInput
+		return styles.Search.Render(":") + m.commandInput
 	}
 
-	help := "q quit | tab tabs | j/k move | :auth login"
-	if m.session == nil {
-		help = "q quit | tab tabs | j/k move | :auth login | :signup register"
-	}
-	if m.selectedTab() == "Plugins" {
-		help = "q quit | tab tabs | arrows buttons/list | / search | enter action"
-		if m.session == nil {
-			help = "q quit | tab tabs | :auth login | :signup register"
-		}
-		if m.pluginWizard.open {
-			help = "tab tabs | esc cancel | up/down input/buttons | left/right buttons | enter next/create"
-		}
-	}
-	if m.authInProgress {
+	help := m.tabs[m.active].Help()
+	if m.profile.AuthInProgress() {
 		help = "authorizing with Keycloak..."
 	}
 
@@ -115,24 +90,28 @@ func (m model) renderFooter() string {
 		return help
 	}
 
-	return fmt.Sprintf("%s %s %s", statusStyle(m.status).Render(m.status), subtleStyle.Render("|"), subtleStyle.Render(help))
+	return fmt.Sprintf("%s %s %s",
+		statusStyle(m.status).Render(m.status),
+		styles.Subtle.Render("|"),
+		styles.Subtle.Render(help),
+	)
 }
 
 func statusStyle(status string) lipgloss.Style {
 	switch {
 	case strings.Contains(status, "failed"), strings.Contains(status, "Failed"), strings.Contains(status, "error"):
-		return dangerStyle
+		return styles.Danger
 	case strings.Contains(status, "Creating"), strings.Contains(status, "Loading"), strings.Contains(status, "Uploading"):
-		return warningStyle
+		return styles.Warning
 	default:
-		return searchStyle
+		return styles.Search
 	}
 }
 
 func (m model) profileLabel() string {
-	if m.session == nil {
+	session := m.profile.Session()
+	if session == nil {
 		return ""
 	}
-
-	return m.session.DisplayName()
+	return session.DisplayName()
 }
