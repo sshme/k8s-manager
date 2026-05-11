@@ -20,10 +20,13 @@ import (
 
 const defaultAddress = "localhost:8080"
 
+// Config - конфигурация сервиса маркетплейса
 type Config struct {
+	// Address - host:port gRPC-эндпоинта маркета
 	Address string
 }
 
+// LoadConfig читает MARKET_GRPC_ADDR, иначе берёт дефолт
 func LoadConfig() Config {
 	address := strings.TrimSpace(os.Getenv("MARKET_GRPC_ADDR"))
 	if address == "" {
@@ -33,6 +36,7 @@ func LoadConfig() Config {
 	return Config{Address: address}
 }
 
+// Service - обёртка над сгенерированным gRPC-клиентом маркетплейса.
 type Service struct {
 	cfg         Config
 	authService *auth.Service
@@ -45,6 +49,8 @@ func NewService(cfg Config, authService *auth.Service) *Service {
 	}
 }
 
+// PluginSummary - представление marketv1.Plugin, удобное для
+// TUI. Без enum-префиксов и с флагами про установку
 type PluginSummary struct {
 	ID          int64
 	Identifier  string
@@ -57,18 +63,23 @@ type PluginSummary struct {
 	Installed   bool
 }
 
+// PluginList - результат ListPlugins. Total приходит от сервера и может
+// быть больше len(Items), потому что выдача лимитируется
 type PluginList struct {
 	Items     []PluginSummary
 	Total     int64
-	Installed bool
+	Installed bool // true если это срез "мои установленные", а не результат поиска
 }
 
+// UploadedArtifact - ответ сервера после успешного стрим-аплоада
 type UploadedArtifact struct {
 	ID       int64
 	Size     int64
 	Checksum string
 }
 
+// DeveloperPluginDraft - поля, которые пользователь заполняет
+// в форме при создании плагина
 type DeveloperPluginDraft struct {
 	PublisherName string
 	Identifier    string
@@ -76,11 +87,12 @@ type DeveloperPluginDraft struct {
 	Description   string
 	Category      string
 	Version       string
-	ZipPath       string
+	ZipPath       string // путь к zip-артефакту на диске
 	OS            string
 	Arch          string
 }
 
+// DeveloperPlugin - модель того, что вернулось после полного флоу создания.
 type DeveloperPlugin struct {
 	PublisherID int64
 	PluginID    int64
@@ -90,6 +102,10 @@ type DeveloperPlugin struct {
 	Version     string
 }
 
+// ListPlugins предоставляет список плагинов.
+//
+// При пустом query возвращает только установленные пользователем плагины.
+// При непустом query ищет по каталогу и помечает установленные.
 func (s *Service) ListPlugins(ctx context.Context, query string) (*PluginList, error) {
 	query = strings.TrimSpace(query)
 
@@ -135,6 +151,7 @@ func (s *Service) ListPlugins(ctx context.Context, query string) (*PluginList, e
 		items = append(items, pluginSummary(plugin))
 	}
 
+	// Подгружаем библиотеку пользователя и склеиваем с результатами поиска
 	installedResp, err := client.ListInstalledPlugins(ctx, &marketv1.ListInstalledPluginsRequest{Limit: 100})
 	if err != nil {
 		return nil, fmt.Errorf("list installed plugins: %w", err)
@@ -157,6 +174,8 @@ func (s *Service) ListPlugins(ctx context.Context, query string) (*PluginList, e
 	}, nil
 }
 
+// InstallPlugin добавляет плагин в библиотеку пользователя. Сервер
+// проверит только существование плагина.
 func (s *Service) InstallPlugin(ctx context.Context, pluginID int64) (*PluginSummary, error) {
 	conn, ctx, closeClient, err := s.connect(ctx)
 	if err != nil {
@@ -178,6 +197,7 @@ func (s *Service) InstallPlugin(ctx context.Context, pluginID int64) (*PluginSum
 	return &summary, nil
 }
 
+// UninstallPlugin убирает плагин из библиотеки пользователя
 func (s *Service) UninstallPlugin(ctx context.Context, pluginID int64) error {
 	conn, ctx, closeClient, err := s.connect(ctx)
 	if err != nil {
@@ -193,6 +213,7 @@ func (s *Service) UninstallPlugin(ctx context.Context, pluginID int64) error {
 	return nil
 }
 
+// UploadArtifact заливает zip-файл по client-streaming RPC
 func (s *Service) UploadArtifact(ctx context.Context, releaseID int64, zipPath, osName, arch string) (*UploadedArtifact, error) {
 	conn, ctx, closeClient, err := s.connect(ctx)
 	if err != nil {
@@ -203,6 +224,8 @@ func (s *Service) UploadArtifact(ctx context.Context, releaseID int64, zipPath, 
 	return uploadArtifact(ctx, marketv1.NewPluginServiceClient(conn), releaseID, zipPath, osName, arch)
 }
 
+// CreateDeveloperPlugin совершает полную цепочку публикации плагина.
+// Trust-статус ставится COMMUNITY.
 func (s *Service) CreateDeveloperPlugin(ctx context.Context, draft DeveloperPluginDraft) (*DeveloperPlugin, error) {
 	draft.PublisherName = strings.TrimSpace(draft.PublisherName)
 	draft.Identifier = strings.TrimSpace(draft.Identifier)
@@ -287,6 +310,9 @@ func (s *Service) CreateDeveloperPlugin(ctx context.Context, draft DeveloperPlug
 	}, nil
 }
 
+// uploadArtifact заливает zip-файл по client-streaming RPC.
+//
+// Сначала отправляет метаданные артефакта, затем чанки по 64KB
 func uploadArtifact(ctx context.Context, client marketv1.PluginServiceClient, releaseID int64, zipPath, osName, arch string) (*UploadedArtifact, error) {
 	zipFile, err := zip.OpenReader(zipPath)
 	if err != nil {
@@ -300,6 +326,7 @@ func uploadArtifact(ctx context.Context, client marketv1.PluginServiceClient, re
 	}
 	defer file.Close()
 
+	// Если пользователь не указал платформу явно, то считаем, что собирал под текущую
 	if osName == "" {
 		osName = runtime.GOOS
 	}
@@ -359,6 +386,10 @@ func uploadArtifact(ctx context.Context, client marketv1.PluginServiceClient, re
 	}, nil
 }
 
+// connect готовит всё для одного RPC-вызова.
+//
+// Достаёт действительный access-токен, открывает gRPC-соединение и
+// добавляет к контексту access-токен.
 func (s *Service) connect(ctx context.Context) (*grpc.ClientConn, context.Context, func(), error) {
 	if s.authService == nil {
 		return nil, ctx, nil, fmt.Errorf("auth service is not configured")
@@ -381,6 +412,8 @@ func (s *Service) connect(ctx context.Context) (*grpc.ClientConn, context.Contex
 	return conn, ctx, func() { _ = conn.Close() }, nil
 }
 
+// pluginSummary конвертирует marketv1.Plugin в PluginSummary.
+// Удаляет enum-префиксы.
 func pluginSummary(plugin *marketv1.Plugin) PluginSummary {
 	if plugin == nil {
 		return PluginSummary{}

@@ -13,14 +13,19 @@ import (
 	"github.com/zalando/go-keyring"
 )
 
+// ErrSessionNotFound - ошибка, когда либо в keyring нет ключа, либо на диске нет файла сессии
 var ErrSessionNotFound = errors.New("session not found")
 
+// Store хранит Session в разделённом виде.
+// Случайный AES-ключ лежит в keyring (его защищает ОС), а
+// сам файл сессии шифруется этим ключом и кладётся на диск.
 type Store struct {
-	service string
-	entry   string
-	path    string
+	service string // имя в keyring
+	entry   string // имя записи внутри keyring (там лежит AES-ключ)
+	path    string // путь до зашифрованного файла сессии
 }
 
+// NewStore просто складывает пути keyring/файла.
 func NewStore(service, entry, path string) *Store {
 	return &Store{
 		service: service,
@@ -29,6 +34,8 @@ func NewStore(service, entry, path string) *Store {
 	}
 }
 
+// Save сериализует сессию в JSON, шифрует AES-GCM и пишет файл с правами
+// 0600 (читать может только владелец). Создаёт папку при необходимости.
 func (s *Store) Save(session *Session) error {
 	payload, err := json.Marshal(session)
 	if err != nil {
@@ -52,6 +59,8 @@ func (s *Store) Save(session *Session) error {
 	return os.WriteFile(s.path, []byte(ciphertext), 0o600)
 }
 
+// Load читает ключ из keyring и зашифрованный файл с диска, расшифровывает
+// и парсит JSON. Если нет ни ключа, ни файла, то возвращает ErrSessionNotFound.
 func (s *Store) Load() (*Session, error) {
 	key, err := keyring.Get(s.service, s.entry)
 	if errors.Is(err, keyring.ErrNotFound) {
@@ -82,6 +91,7 @@ func (s *Store) Load() (*Session, error) {
 	return &session, nil
 }
 
+// Delete стирает и файл, и ключ. Если файла и не было, то ошибка не кидается
 func (s *Store) Delete() error {
 	if err := os.Remove(s.path); err != nil && !errors.Is(err, os.ErrNotExist) {
 		return err
@@ -95,6 +105,9 @@ func (s *Store) Delete() error {
 	return err
 }
 
+// loadOrCreateKey достаёт AES-ключ из keyring, а если его нет, то
+// генерит новый 256-битный и кладёт туда же. Один и тот же ключ потом
+// переиспользуется для всех будущих сессий.
 func (s *Store) loadOrCreateKey() (string, error) {
 	key, err := keyring.Get(s.service, s.entry)
 	if err == nil {
@@ -117,6 +130,9 @@ func (s *Store) loadOrCreateKey() (string, error) {
 	return key, nil
 }
 
+// encrypt - AES-256-GCM. Генерирует случайный nonce и помещает в начало
+// шифротекста, decrypt потом достанет его оттуда. GCM сам проверит
+// целостность при расшифровке, если подменили байт, то ошибка
 func encrypt(encodedKey string, plaintext []byte) (string, error) {
 	key, err := base64.RawStdEncoding.DecodeString(encodedKey)
 	if err != nil {
@@ -142,6 +158,8 @@ func encrypt(encodedKey string, plaintext []byte) (string, error) {
 	return base64.RawStdEncoding.EncodeToString(ciphertext), nil
 }
 
+// decrypt - обратная операция к encrypt. Достаёт nonce из начала
+// шифротекста, проверяет тег целостности, возвращает plaintext
 func decrypt(encodedKey, encodedCiphertext string) ([]byte, error) {
 	key, err := base64.RawStdEncoding.DecodeString(encodedKey)
 	if err != nil {

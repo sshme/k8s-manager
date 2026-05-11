@@ -15,6 +15,7 @@ const (
 	defaultKeyringEntry = "keycloak-session-key"
 )
 
+// Config - струткура конфигурации auth сервиса
 type Config struct {
 	IssuerURL    string
 	ClientID     string
@@ -24,6 +25,8 @@ type Config struct {
 	SessionPath  string
 }
 
+// LoadConfig читает env, подставляет дефолты.
+// Если RedirectURL кривой (без http/https или не парсится), используется на дефолтное значение.
 func LoadConfig() Config {
 	cfg := Config{
 		IssuerURL:    getEnv("KEYCLOAK_ISSUER_URL", defaultIssuerURL),
@@ -45,6 +48,8 @@ func LoadConfig() Config {
 	return cfg
 }
 
+// getEnv достаёт переменную окружения, убирает лишние пробелы в начале и конце.
+// Если пусто, то возвращает fallback.
 func getEnv(key, fallback string) string {
 	if value := strings.TrimSpace(os.Getenv(key)); value != "" {
 		return value
@@ -53,6 +58,9 @@ func getEnv(key, fallback string) string {
 	return fallback
 }
 
+// defaultSessionPath - место для хранения зашифрованного файла сессии. По
+// возможности в штатный UserConfigDir. Если ОС не дала такой
+// путь, используется /tmp
 func defaultSessionPath() string {
 	configDir, err := os.UserConfigDir()
 	if err != nil || configDir == "" {

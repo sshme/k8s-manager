@@ -20,11 +20,14 @@ import (
 	"golang.org/x/oauth2"
 )
 
+// Service - сервис для аутентификации через OIDC.
 type Service struct {
 	cfg   Config
 	store *Store
 }
 
+// NewService собирает Service по конфигу и инициализирует Store
+// с теми же данными из этого конфига.
 func NewService(cfg Config) *Service {
 	return &Service{
 		cfg:   cfg,
@@ -32,6 +35,9 @@ func NewService(cfg Config) *Service {
 	}
 }
 
+// LoadSession читает сохранённую сессию. Если Session.NeedsRefresh, то
+// рефрещ происходит автоматически. Если рефреш не удался, то локальная
+// сессия удаляется, поскольку она протухшая.
 func (s *Service) LoadSession(ctx context.Context) (*Session, error) {
 	session, err := s.store.Load()
 	if err != nil {
@@ -51,14 +57,26 @@ func (s *Service) LoadSession(ctx context.Context) (*Session, error) {
 	return refreshed, nil
 }
 
+// Authenticate запускает обычный логин-флоу. Keycloak покажет форму входа.
 func (s *Service) Authenticate(ctx context.Context) (*Session, error) {
 	return s.authorize(ctx, false)
 }
 
+// Register запускает тот же Authenticate флоу, но Keycloak сразу откроет форму
+// регистрации вместо логина.
 func (s *Service) Register(ctx context.Context) (*Session, error) {
 	return s.authorize(ctx, true)
 }
 
+// authorize - OAuth2 Authorization Code Flow + PKCE.
+//
+// Сначала генерирует state и PKCE verifier/challenge, затем
+// поднимает локальный HTTP-сервер на RedirectURL чтобы поймать code,
+// открывает браузер с auth URL, пользователь логинится в Keycloak,
+// Keycloak редиректит браузер на callback с code,
+// code + verifier меняются на токены через token endpoint,
+// достаются claims пользователя (id_token или userinfo)
+// и всё сохранятся в Store.
 func (s *Service) authorize(ctx context.Context, register bool) (*Session, error) {
 	provider, oauthCfg, err := s.providerConfig(ctx)
 	if err != nil {
@@ -89,6 +107,8 @@ func (s *Service) authorize(ctx context.Context, register bool) (*Session, error
 	if err != nil {
 		return nil, err
 	}
+
+	// Сервер живёт ровно на время флоу, после выхода из функции освобождаем порт
 	defer func() {
 		shutdownCtx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 		defer cancel()
@@ -112,6 +132,8 @@ func (s *Service) authorize(ctx context.Context, register bool) (*Session, error
 		return nil, fmt.Errorf("failed to open browser: %w", err)
 	}
 
+	// Либо юзер закрыл TUI (ctx), либо callback-сервер вернул ошибку,
+	// либо нам прилетел code из редиректа
 	var code string
 	select {
 	case <-ctx.Done():
@@ -144,6 +166,7 @@ func (s *Service) authorize(ctx context.Context, register bool) (*Session, error
 	return session, nil
 }
 
+// AttachToken возвращает актуальный access-токен
 func (s *Service) AttachToken(ctx context.Context) (string, error) {
 	session, err := s.LoadSession(ctx)
 	if err != nil {
@@ -153,6 +176,8 @@ func (s *Service) AttachToken(ctx context.Context) (string, error) {
 	return session.AccessToken, nil
 }
 
+// RevocationFailedError означает что локально logout прошёл успешно, но
+// сервер про это не узнал, то есть refresh-токен формально ещё валиден
 type RevocationFailedError struct {
 	Err error
 }
@@ -186,7 +211,7 @@ func (s *Service) Logout(ctx context.Context) error {
 	return nil
 }
 
-// revokeRefreshToken отправляет refresh-токен на OIDC-эндпоинт.
+// revokeRefreshToken отправляет refresh-токен на revocation OIDC-эндпоинт.
 // Адрес эндпоинта берётся из discovery Keycloak.
 func (s *Service) revokeRefreshToken(ctx context.Context, refreshToken string) error {
 	if refreshToken == "" {
@@ -236,6 +261,7 @@ func (s *Service) revokeRefreshToken(ctx context.Context, refreshToken string) e
 		resp.Status, strings.TrimSpace(string(body)))
 }
 
+// providerConfig делает OIDC discovery и собирает oauth2.Config с нужными scope
 func (s *Service) providerConfig(ctx context.Context) (*oidc.Provider, *oauth2.Config, error) {
 	provider, err := oidc.NewProvider(ctx, s.cfg.IssuerURL)
 	if err != nil {
@@ -256,6 +282,7 @@ func (s *Service) providerConfig(ctx context.Context) (*oidc.Provider, *oauth2.C
 	return provider, oauthCfg, nil
 }
 
+// refreshSession обменивает refresh_token на новую пару токенов
 func (s *Service) refreshSession(ctx context.Context, session *Session) (*Session, error) {
 	if session == nil || session.RefreshToken == "" {
 		return nil, ErrSessionNotFound
@@ -306,6 +333,10 @@ func (s *Service) refreshSession(ctx context.Context, session *Session) (*Sessio
 	return nextSession, nil
 }
 
+// sessionFromToken достаёт claims пользователя (sub, email, имя) из
+// id_token. Если id_token отсутствует или claims в нём пустые, то
+// производится попытка достать необходимое из userinfo endpoint.
+// Заодно verifier проверяет подпись id_token
 func (s *Service) sessionFromToken(ctx context.Context, provider *oidc.Provider, oauthCfg *oauth2.Config, token *oauth2.Token) (*Session, error) {
 	session := &Session{
 		AccessToken:  token.AccessToken,
@@ -362,6 +393,11 @@ func (s *Service) sessionFromToken(ctx context.Context, provider *oidc.Provider,
 	return session, nil
 }
 
+// startCallbackServer поднимает локальный HTTP-сервер на RedirectURL
+// и ждёт ровно один редирект от Keycloak. Полученный code и любые
+// ошибки направляет в каналы (неблокирующе). State-токен сверяется
+// здесь же, чтобы отсеять CSRF и просто чужие редиректы, прилетевшие
+// на порт
 func (s *Service) startCallbackServer(
 	redirectURL *url.URL,
 	expectedState string,
@@ -438,6 +474,7 @@ func (s *Service) startCallbackServer(
 	return server, listener, nil
 }
 
+// openBrowser открывает url в дефолтном браузере ОС
 func openBrowser(rawURL string) error {
 	var cmd *exec.Cmd
 
@@ -453,6 +490,7 @@ func openBrowser(rawURL string) error {
 	return cmd.Start()
 }
 
+// randomBase64URL - size случайных байт в base64url
 func randomBase64URL(size int) (string, error) {
 	buf := make([]byte, size)
 	if _, err := rand.Read(buf); err != nil {
@@ -462,11 +500,13 @@ func randomBase64URL(size int) (string, error) {
 	return base64.RawURLEncoding.EncodeToString(buf), nil
 }
 
+// pkceChallenge = base64url(sha256(verifier))
 func pkceChallenge(verifier string) string {
 	sum := sha256.Sum256([]byte(verifier))
 	return base64.RawURLEncoding.EncodeToString(sum[:])
 }
 
+// registrationURL переписывает /auth на /registrations в authURL
 func registrationURL(authURL string) (string, error) {
 	parsed, err := url.Parse(authURL)
 	if err != nil {
