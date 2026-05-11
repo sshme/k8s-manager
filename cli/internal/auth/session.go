@@ -12,6 +12,7 @@ type Session struct {
 	UserID       string    `json:"user_id"`
 	Username     string    `json:"username"`
 	Email        string    `json:"email"`
+	Roles        []string  `json:"roles,omitempty"`
 }
 
 // DisplayName - имя для отображение в UI. Берётся первое непустое из

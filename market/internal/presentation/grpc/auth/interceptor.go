@@ -42,6 +42,9 @@ func UnaryAuthInterceptor(rules map[string]Rule, parseToken TokenParser) grpc.Un
 		}
 
 		ctx = WithClaims(ctx, claims)
+		if err := authorize(claims, rule); err != nil {
+			return nil, err
+		}
 
 		return handler(ctx, req)
 	}
@@ -76,11 +79,26 @@ func StreamAuthInterceptor(rules map[string]Rule, parseToken TokenParser) grpc.S
 			return status.Error(codes.Unauthenticated, "invalid token")
 		}
 
+		if err := authorize(claims, rule); err != nil {
+			return err
+		}
+
 		return handler(srv, &authServerStream{
 			ServerStream: stream,
 			ctx:          WithClaims(ctx, claims),
 		})
 	}
+}
+
+func authorize(claims *Claims, rule Rule) error {
+	if len(rule.RequiredRoles) == 0 {
+		return nil
+	}
+	if claims.HasAnyRole(rule.RequiredRoles...) {
+		return nil
+	}
+
+	return status.Error(codes.PermissionDenied, "insufficient permissions")
 }
 
 type authServerStream struct {

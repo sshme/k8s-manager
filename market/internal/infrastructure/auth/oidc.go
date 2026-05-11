@@ -17,6 +17,12 @@ type TokenClaims struct {
 	Sub               string `json:"sub"`
 	Email             string `json:"email"`
 	PreferredUsername string `json:"preferred_username"`
+	RealmAccess       struct {
+		Roles []string `json:"roles"`
+	} `json:"realm_access"`
+	ResourceAccess map[string]struct {
+		Roles []string `json:"roles"`
+	} `json:"resource_access"`
 }
 
 type OIDCClient struct {

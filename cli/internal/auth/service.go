@@ -5,6 +5,7 @@ import (
 	"crypto/rand"
 	"crypto/sha256"
 	"encoding/base64"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -45,6 +46,7 @@ func (s *Service) LoadSession(ctx context.Context) (*Session, error) {
 	}
 
 	if !session.NeedsRefresh() {
+		s.enrichSessionRoles(session)
 		return session, nil
 	}
 
@@ -325,6 +327,10 @@ func (s *Service) refreshSession(ctx context.Context, session *Session) (*Sessio
 	if nextSession.UserID == "" {
 		nextSession.UserID = session.UserID
 	}
+	if len(nextSession.Roles) == 0 {
+		nextSession.Roles = session.Roles
+	}
+	s.enrichSessionRoles(nextSession)
 
 	if err := s.store.Save(nextSession); err != nil {
 		return nil, fmt.Errorf("failed to persist refreshed session: %w", err)
@@ -358,6 +364,12 @@ func (s *Service) sessionFromToken(ctx context.Context, provider *oidc.Provider,
 			Subject           string `json:"sub"`
 			Email             string `json:"email"`
 			PreferredUsername string `json:"preferred_username"`
+			RealmAccess       struct {
+				Roles []string `json:"roles"`
+			} `json:"realm_access"`
+			ResourceAccess map[string]struct {
+				Roles []string `json:"roles"`
+			} `json:"resource_access"`
 		}
 		if err := idToken.Claims(&claims); err != nil {
 			return nil, fmt.Errorf("failed to parse id token claims: %w", err)
@@ -366,9 +378,14 @@ func (s *Service) sessionFromToken(ctx context.Context, provider *oidc.Provider,
 		session.UserID = claims.Subject
 		session.Email = claims.Email
 		session.Username = claims.PreferredUsername
+		session.Roles = mergeRoles(session.Roles, claims.RealmAccess.Roles)
+		for _, access := range claims.ResourceAccess {
+			session.Roles = mergeRoles(session.Roles, access.Roles)
+		}
 	}
 
 	if session.Username != "" || session.Email != "" || session.UserID != "" {
+		s.enrichSessionRoles(session)
 		return session, nil
 	}
 
@@ -389,8 +406,67 @@ func (s *Service) sessionFromToken(ctx context.Context, provider *oidc.Provider,
 	session.UserID = claims.Subject
 	session.Email = claims.Email
 	session.Username = claims.PreferredUsername
+	s.enrichSessionRoles(session)
 
 	return session, nil
+}
+
+func (s *Service) enrichSessionRoles(session *Session) {
+	if session == nil {
+		return
+	}
+	session.Roles = mergeRoles(session.Roles, rolesFromJWT(session.IDToken))
+	session.Roles = mergeRoles(session.Roles, rolesFromJWT(session.AccessToken))
+}
+
+func rolesFromJWT(rawToken string) []string {
+	parts := strings.Split(rawToken, ".")
+	if len(parts) < 2 {
+		return nil
+	}
+
+	payload, err := base64.RawURLEncoding.DecodeString(parts[1])
+	if err != nil {
+		return nil
+	}
+
+	var claims struct {
+		RealmAccess struct {
+			Roles []string `json:"roles"`
+		} `json:"realm_access"`
+		ResourceAccess map[string]struct {
+			Roles []string `json:"roles"`
+		} `json:"resource_access"`
+	}
+	if err := json.Unmarshal(payload, &claims); err != nil {
+		return nil
+	}
+
+	roles := mergeRoles(nil, claims.RealmAccess.Roles)
+	for _, access := range claims.ResourceAccess {
+		roles = mergeRoles(roles, access.Roles)
+	}
+	return roles
+}
+
+func mergeRoles(current, next []string) []string {
+	for _, role := range next {
+		role = strings.TrimSpace(role)
+		if role == "" || containsString(current, role) {
+			continue
+		}
+		current = append(current, role)
+	}
+	return current
+}
+
+func containsString(values []string, target string) bool {
+	for _, value := range values {
+		if value == target {
+			return true
+		}
+	}
+	return false
 }
 
 // startCallbackServer поднимает локальный HTTP-сервер на RedirectURL

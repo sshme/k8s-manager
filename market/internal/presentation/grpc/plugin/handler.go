@@ -4,14 +4,18 @@ import (
 	"archive/zip"
 	"bytes"
 	"context"
-	"fmt"
+	"errors"
 	"io"
+	"strings"
 
 	appplugin "k8s-manager/market/internal/application/plugin"
 	domainplugin "k8s-manager/market/internal/domain/plugin"
 	"k8s-manager/market/internal/infrastructure/storage"
 	"k8s-manager/market/internal/presentation/grpc/auth"
 	marketv1 "k8s-manager/proto/gen/v1/market"
+
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 )
 
 // Handler implements the gRPC PluginService
@@ -45,7 +49,7 @@ func (h *Handler) CreatePlugin(ctx context.Context, req *marketv1.CreatePluginRe
 
 	p, err := h.service.CreatePlugin(contextWithClaimsUserID(ctx), createReq)
 	if err != nil {
-		return nil, fmt.Errorf("failed to create plugin: %w", err)
+		return nil, grpcError("create plugin", err)
 	}
 
 	return &marketv1.CreatePluginResponse{
@@ -57,7 +61,7 @@ func (h *Handler) CreatePlugin(ctx context.Context, req *marketv1.CreatePluginRe
 func (h *Handler) GetPlugin(ctx context.Context, req *marketv1.GetPluginRequest) (*marketv1.GetPluginResponse, error) {
 	p, err := h.service.GetPlugin(ctx, req.Id)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get plugin: %w", err)
+		return nil, grpcError("get plugin", err)
 	}
 
 	return &marketv1.GetPluginResponse{
@@ -80,7 +84,7 @@ func (h *Handler) ListPlugins(ctx context.Context, req *marketv1.ListPluginsRequ
 
 	plugins, total, err := h.service.ListPlugins(ctx, listReq)
 	if err != nil {
-		return nil, fmt.Errorf("failed to list plugins: %w", err)
+		return nil, grpcError("list plugins", err)
 	}
 
 	protoPlugins := make([]*marketv1.Plugin, len(plugins))
@@ -107,7 +111,7 @@ func (h *Handler) UpdatePlugin(ctx context.Context, req *marketv1.UpdatePluginRe
 
 	p, err := h.service.UpdatePlugin(ctx, updateReq)
 	if err != nil {
-		return nil, fmt.Errorf("failed to update plugin: %w", err)
+		return nil, grpcError("update plugin", err)
 	}
 
 	return &marketv1.UpdatePluginResponse{
@@ -119,7 +123,7 @@ func (h *Handler) UpdatePlugin(ctx context.Context, req *marketv1.UpdatePluginRe
 func (h *Handler) UpdatePluginStatus(ctx context.Context, req *marketv1.UpdatePluginStatusRequest) (*marketv1.UpdatePluginStatusResponse, error) {
 	err := h.service.UpdatePluginStatus(ctx, req.Id, fromProtoPluginStatus(req.Status), req.Reason)
 	if err != nil {
-		return nil, fmt.Errorf("failed to update plugin status: %w", err)
+		return nil, grpcError("update plugin status", err)
 	}
 
 	return &marketv1.UpdatePluginStatusResponse{}, nil
@@ -138,7 +142,7 @@ func (h *Handler) CreateRelease(ctx context.Context, req *marketv1.CreateRelease
 
 	rel, err := h.service.CreateRelease(contextWithClaimsUserID(ctx), createReq)
 	if err != nil {
-		return nil, fmt.Errorf("failed to create release: %w", err)
+		return nil, grpcError("create release", err)
 	}
 
 	return &marketv1.CreateReleaseResponse{
@@ -150,7 +154,7 @@ func (h *Handler) CreateRelease(ctx context.Context, req *marketv1.CreateRelease
 func (h *Handler) GetRelease(ctx context.Context, req *marketv1.GetReleaseRequest) (*marketv1.GetReleaseResponse, error) {
 	rel, err := h.service.GetRelease(ctx, req.Id)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get release: %w", err)
+		return nil, grpcError("get release", err)
 	}
 
 	return &marketv1.GetReleaseResponse{
@@ -162,7 +166,7 @@ func (h *Handler) GetRelease(ctx context.Context, req *marketv1.GetReleaseReques
 func (h *Handler) ListReleases(ctx context.Context, req *marketv1.ListReleasesRequest) (*marketv1.ListReleasesResponse, error) {
 	releases, total, err := h.service.ListReleases(ctx, req.PluginId, int(req.Limit), int(req.Offset))
 	if err != nil {
-		return nil, fmt.Errorf("failed to list releases: %w", err)
+		return nil, grpcError("list releases", err)
 	}
 
 	protoReleases := make([]*marketv1.Release, len(releases))
@@ -180,7 +184,7 @@ func (h *Handler) ListReleases(ctx context.Context, req *marketv1.ListReleasesRe
 func (h *Handler) GetLatestRelease(ctx context.Context, req *marketv1.GetLatestReleaseRequest) (*marketv1.GetLatestReleaseResponse, error) {
 	rel, err := h.service.GetLatestRelease(ctx, req.PluginId)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get latest release: %w", err)
+		return nil, grpcError("get latest release", err)
 	}
 
 	return &marketv1.GetLatestReleaseResponse{
@@ -331,7 +335,7 @@ func (h *Handler) UploadArtifact(stream marketv1.PluginService_UploadArtifactSer
 			if err == io.EOF {
 				break
 			}
-			return fmt.Errorf("failed to receive: %w", err)
+			return grpcError("receive artifact upload", err)
 		}
 
 		switch data := req.Data.(type) {
@@ -339,32 +343,32 @@ func (h *Handler) UploadArtifact(stream marketv1.PluginService_UploadArtifactSer
 			metadata = data.Metadata
 		case *marketv1.UploadArtifactRequest_Chunk:
 			if _, err := chunks.Write(data.Chunk); err != nil {
-				return fmt.Errorf("failed to buffer artifact chunk: %w", err)
+				return status.Errorf(codes.Internal, "buffer artifact chunk: %v", err)
 			}
 		}
 	}
 
 	if metadata == nil {
-		return fmt.Errorf("metadata is required")
+		return status.Error(codes.InvalidArgument, "artifact metadata is required")
 	}
 	if metadata.ReleaseId == 0 {
-		return fmt.Errorf("release_id is required")
+		return status.Error(codes.InvalidArgument, "release_id is required")
 	}
 	if metadata.Os == "" || metadata.Arch == "" {
-		return fmt.Errorf("os and arch are required")
+		return status.Error(codes.InvalidArgument, "os and arch are required")
 	}
 
 	data := chunks.Bytes()
 	if len(data) == 0 {
-		return fmt.Errorf("artifact content is required")
+		return status.Error(codes.InvalidArgument, "artifact content is required")
 	}
 	if _, err := zip.NewReader(bytes.NewReader(data), int64(len(data))); err != nil {
-		return fmt.Errorf("artifact must be a valid zip archive: %w", err)
+		return status.Errorf(codes.InvalidArgument, "artifact must be a valid zip archive: %v", err)
 	}
 
 	rel, err := h.service.GetRelease(stream.Context(), metadata.ReleaseId)
 	if err != nil {
-		return fmt.Errorf("failed to get release: %w", err)
+		return grpcError("get release", err)
 	}
 
 	filename := metadata.OriginalFilename
@@ -373,7 +377,7 @@ func (h *Handler) UploadArtifact(stream marketv1.PluginService_UploadArtifactSer
 	}
 	storagePath, checksum, size, err := h.storage.Save(rel.PluginID, rel.ID, metadata.Os, metadata.Arch, filename, bytes.NewReader(data))
 	if err != nil {
-		return fmt.Errorf("failed to save artifact: %w", err)
+		return status.Errorf(codes.Unavailable, "save artifact: %v", err)
 	}
 
 	artifactType := metadata.Type
@@ -394,7 +398,7 @@ func (h *Handler) UploadArtifact(stream marketv1.PluginService_UploadArtifactSer
 	})
 	if err != nil {
 		_ = h.storage.Delete(storagePath)
-		return fmt.Errorf("failed to create artifact: %w", err)
+		return grpcError("create artifact", err)
 	}
 
 	return stream.SendAndClose(&marketv1.UploadArtifactResponse{
@@ -406,7 +410,7 @@ func (h *Handler) UploadArtifact(stream marketv1.PluginService_UploadArtifactSer
 func (h *Handler) GetArtifact(ctx context.Context, req *marketv1.GetArtifactRequest) (*marketv1.GetArtifactResponse, error) {
 	art, err := h.service.GetArtifact(ctx, req.Id)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get artifact: %w", err)
+		return nil, grpcError("get artifact", err)
 	}
 
 	return &marketv1.GetArtifactResponse{
@@ -418,7 +422,7 @@ func (h *Handler) GetArtifact(ctx context.Context, req *marketv1.GetArtifactRequ
 func (h *Handler) GetArtifactByPlatform(ctx context.Context, req *marketv1.GetArtifactByPlatformRequest) (*marketv1.GetArtifactResponse, error) {
 	art, err := h.service.GetArtifactByPlatform(ctx, req.ReleaseId, req.Os, req.Arch)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get artifact: %w", err)
+		return nil, grpcError("get artifact", err)
 	}
 
 	return &marketv1.GetArtifactResponse{
@@ -430,7 +434,7 @@ func (h *Handler) GetArtifactByPlatform(ctx context.Context, req *marketv1.GetAr
 func (h *Handler) ListArtifacts(ctx context.Context, req *marketv1.ListArtifactsRequest) (*marketv1.ListArtifactsResponse, error) {
 	artifacts, err := h.service.ListArtifacts(ctx, req.ReleaseId)
 	if err != nil {
-		return nil, fmt.Errorf("failed to list artifacts: %w", err)
+		return nil, grpcError("list artifacts", err)
 	}
 
 	protoArtifacts := make([]*marketv1.Artifact, len(artifacts))
@@ -447,12 +451,12 @@ func (h *Handler) ListArtifacts(ctx context.Context, req *marketv1.ListArtifacts
 func (h *Handler) DownloadArtifact(req *marketv1.DownloadArtifactRequest, stream marketv1.PluginService_DownloadArtifactServer) error {
 	artifact, err := h.service.GetArtifact(stream.Context(), req.Id)
 	if err != nil {
-		return fmt.Errorf("failed to get artifact: %w", err)
+		return grpcError("get artifact", err)
 	}
 
 	file, err := h.storage.Get(artifact.StoragePath)
 	if err != nil {
-		return fmt.Errorf("failed to open artifact: %w", err)
+		return status.Errorf(codes.Unavailable, "open artifact: %v", err)
 	}
 	defer file.Close()
 
@@ -461,14 +465,14 @@ func (h *Handler) DownloadArtifact(req *marketv1.DownloadArtifactRequest, stream
 		n, err := file.Read(buf)
 		if n > 0 {
 			if sendErr := stream.Send(&marketv1.DownloadArtifactResponse{Chunk: buf[:n]}); sendErr != nil {
-				return fmt.Errorf("failed to stream artifact: %w", sendErr)
+				return grpcError("stream artifact", sendErr)
 			}
 		}
 		if err == io.EOF {
 			return nil
 		}
 		if err != nil {
-			return fmt.Errorf("failed to read artifact: %w", err)
+			return status.Errorf(codes.Unavailable, "read artifact: %v", err)
 		}
 	}
 }
@@ -477,12 +481,12 @@ func (h *Handler) DownloadArtifact(req *marketv1.DownloadArtifactRequest, stream
 func (h *Handler) DeleteArtifact(ctx context.Context, req *marketv1.DeleteArtifactRequest) (*marketv1.DeleteArtifactResponse, error) {
 	artifact, err := h.service.GetArtifact(ctx, req.Id)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get artifact: %w", err)
+		return nil, grpcError("get artifact", err)
 	}
 
 	err = h.service.DeleteArtifact(ctx, req.Id, req.Reason)
 	if err != nil {
-		return nil, fmt.Errorf("failed to delete artifact: %w", err)
+		return nil, grpcError("delete artifact", err)
 	}
 	_ = h.storage.Delete(artifact.StoragePath)
 
@@ -493,7 +497,7 @@ func (h *Handler) DeleteArtifact(ctx context.Context, req *marketv1.DeleteArtifa
 func (h *Handler) InstallPlugin(ctx context.Context, req *marketv1.InstallPluginRequest) (*marketv1.InstallPluginResponse, error) {
 	installed, err := h.service.InstallPlugin(contextWithClaimsUserID(ctx), req.PluginId)
 	if err != nil {
-		return nil, fmt.Errorf("failed to install plugin: %w", err)
+		return nil, grpcError("install plugin", err)
 	}
 
 	return &marketv1.InstallPluginResponse{
@@ -504,7 +508,7 @@ func (h *Handler) InstallPlugin(ctx context.Context, req *marketv1.InstallPlugin
 // UninstallPlugin handles UninstallPlugin gRPC request.
 func (h *Handler) UninstallPlugin(ctx context.Context, req *marketv1.UninstallPluginRequest) (*marketv1.UninstallPluginResponse, error) {
 	if err := h.service.UninstallPlugin(contextWithClaimsUserID(ctx), req.PluginId); err != nil {
-		return nil, fmt.Errorf("failed to uninstall plugin: %w", err)
+		return nil, grpcError("uninstall plugin", err)
 	}
 
 	return &marketv1.UninstallPluginResponse{}, nil
@@ -514,7 +518,7 @@ func (h *Handler) UninstallPlugin(ctx context.Context, req *marketv1.UninstallPl
 func (h *Handler) ListInstalledPlugins(ctx context.Context, req *marketv1.ListInstalledPluginsRequest) (*marketv1.ListInstalledPluginsResponse, error) {
 	installations, total, err := h.service.ListInstalledPlugins(contextWithClaimsUserID(ctx), int(req.Limit), int(req.Offset))
 	if err != nil {
-		return nil, fmt.Errorf("failed to list installed plugins: %w", err)
+		return nil, grpcError("list installed plugins", err)
 	}
 
 	protoInstallations := make([]*marketv1.InstalledPlugin, len(installations))
@@ -544,7 +548,7 @@ func (h *Handler) CreatePublisher(ctx context.Context, req *marketv1.CreatePubli
 		WebsiteURL:  req.WebsiteUrl,
 	})
 	if err != nil {
-		return nil, fmt.Errorf("failed to create publisher: %w", err)
+		return nil, grpcError("create publisher", err)
 	}
 
 	return &marketv1.CreatePublisherResponse{
@@ -556,7 +560,7 @@ func (h *Handler) CreatePublisher(ctx context.Context, req *marketv1.CreatePubli
 func (h *Handler) GetPublisher(ctx context.Context, req *marketv1.GetPublisherRequest) (*marketv1.GetPublisherResponse, error) {
 	pub, err := h.service.GetPublisher(ctx, req.Id)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get publisher: %w", err)
+		return nil, grpcError("get publisher", err)
 	}
 
 	return &marketv1.GetPublisherResponse{
@@ -568,7 +572,7 @@ func (h *Handler) GetPublisher(ctx context.Context, req *marketv1.GetPublisherRe
 func (h *Handler) ListPublishers(ctx context.Context, req *marketv1.ListPublishersRequest) (*marketv1.ListPublishersResponse, error) {
 	publishers, total, err := h.service.ListPublishers(ctx, int(req.Limit), int(req.Offset))
 	if err != nil {
-		return nil, fmt.Errorf("failed to list publishers: %w", err)
+		return nil, grpcError("list publishers", err)
 	}
 
 	protoPublishers := make([]*marketv1.Publisher, len(publishers))
@@ -580,4 +584,33 @@ func (h *Handler) ListPublishers(ctx context.Context, req *marketv1.ListPublishe
 		Publishers: protoPublishers,
 		Total:      total,
 	}, nil
+}
+
+func grpcError(operation string, err error) error {
+	if err == nil {
+		return nil
+	}
+	if _, ok := status.FromError(err); ok {
+		return err
+	}
+
+	switch {
+	case errors.Is(err, context.Canceled):
+		return status.Errorf(codes.Canceled, "%s: %v", operation, err)
+	case errors.Is(err, context.DeadlineExceeded):
+		return status.Errorf(codes.DeadlineExceeded, "%s: %v", operation, err)
+	case errors.Is(err, appplugin.ErrInvalidInput):
+		return status.Errorf(codes.InvalidArgument, "%s: %v", operation, err)
+	case errors.Is(err, appplugin.ErrPluginNotFound),
+		errors.Is(err, appplugin.ErrReleaseNotFound),
+		errors.Is(err, appplugin.ErrArtifactNotFound),
+		errors.Is(err, appplugin.ErrPublisherNotFound):
+		return status.Errorf(codes.NotFound, "%s: %v", operation, err)
+	case errors.Is(err, appplugin.ErrVersionExists),
+		errors.Is(err, appplugin.ErrArtifactExists),
+		strings.Contains(strings.ToLower(err.Error()), "already exists"):
+		return status.Errorf(codes.AlreadyExists, "%s: %v", operation, err)
+	default:
+		return status.Errorf(codes.Internal, "%s: %v", operation, err)
+	}
 }

@@ -20,6 +20,7 @@ func (t *ProfileTab) View(width, height int) string {
 			"",
 			styles.Subtle.Render(fmt.Sprintf("  user-id : %s", fallback(t.session.UserID, "-"))),
 			styles.Subtle.Render(fmt.Sprintf("  email   : %s", fallback(t.session.Email, "-"))),
+			styles.Subtle.Render(fmt.Sprintf("  roles   : %s", fallback(formatRoles(t.session.Roles), "-"))),
 			styles.Subtle.Render(fmt.Sprintf("  expires : %s", formatExpiry(t.session.Expiry))),
 		)
 	} else {
@@ -55,6 +56,27 @@ func fallback(value, def string) string {
 		return def
 	}
 	return value
+}
+
+func formatRoles(roles []string) string {
+	cleaned := make([]string, 0, len(roles))
+	for _, role := range roles {
+		role = strings.TrimSpace(role)
+		if role == "" || contains(cleaned, role) {
+			continue
+		}
+		cleaned = append(cleaned, role)
+	}
+	return strings.Join(cleaned, ", ")
+}
+
+func contains(values []string, target string) bool {
+	for _, value := range values {
+		if value == target {
+			return true
+		}
+	}
+	return false
 }
 
 // formatExpiry рисует время истечения сессии по RFC3339

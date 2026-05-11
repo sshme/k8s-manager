@@ -10,6 +10,8 @@ import (
 	"syscall"
 
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/health"
+	healthv1 "google.golang.org/grpc/health/grpc_health_v1"
 
 	authOIDC "k8s-manager/market/internal/infrastructure/auth"
 	"k8s-manager/market/internal/presentation/grpc/auth"
@@ -36,11 +38,38 @@ func NewServer(port int, userHandler *user.Handler, pluginHandler *plugin.Handle
 
 	rules := map[string]auth.Rule{
 		"/grpc.health.v1.Health/Check": {Public: true},
+		"/market.v1.PluginService/CreatePlugin": {
+			RequiredRoles: []string{auth.RoleMarketAdmin, auth.RoleMarketPublisher},
+		},
+		"/market.v1.PluginService/UpdatePlugin": {
+			RequiredRoles: []string{auth.RoleMarketAdmin, auth.RoleMarketPublisher},
+		},
+		"/market.v1.PluginService/UpdatePluginStatus": {
+			RequiredRoles: []string{auth.RoleMarketAdmin},
+		},
+		"/market.v1.PluginService/CreateRelease": {
+			RequiredRoles: []string{auth.RoleMarketAdmin, auth.RoleMarketPublisher},
+		},
+		"/market.v1.PluginService/UploadArtifact": {
+			RequiredRoles: []string{auth.RoleMarketAdmin, auth.RoleMarketPublisher},
+		},
+		"/market.v1.PluginService/DeleteArtifact": {
+			RequiredRoles: []string{auth.RoleMarketAdmin, auth.RoleMarketPublisher},
+		},
+		"/market.v1.PublisherService/CreatePublisher": {
+			RequiredRoles: []string{auth.RoleMarketAdmin, auth.RoleMarketPublisher},
+		},
 	}
 	grpcServer := grpc.NewServer(
 		grpc.UnaryInterceptor(auth.UnaryAuthInterceptor(rules, auth.NewOIDCTokenParser(oidcClient))),
 		grpc.StreamInterceptor(auth.StreamAuthInterceptor(rules, auth.NewOIDCTokenParser(oidcClient))),
 	)
+	healthServer := health.NewServer()
+	healthServer.SetServingStatus("", healthv1.HealthCheckResponse_SERVING)
+	healthServer.SetServingStatus("market.v1.PluginService", healthv1.HealthCheckResponse_SERVING)
+	healthServer.SetServingStatus("market.v1.PublisherService", healthv1.HealthCheckResponse_SERVING)
+	healthServer.SetServingStatus("users.v1.UserService", healthv1.HealthCheckResponse_SERVING)
+	healthv1.RegisterHealthServer(grpcServer, healthServer)
 
 	usersv1.RegisterUserServiceServer(grpcServer, userHandler)
 	marketv1.RegisterPluginServiceServer(grpcServer, pluginHandler)

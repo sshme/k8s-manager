@@ -272,13 +272,13 @@ func (s *Service) CreateRelease(ctx context.Context, req *CreateReleaseRequest) 
 		return nil, ErrVersionExists
 	}
 
-	// If this is the first release, automatically set it as latest
-	if req.IsLatest {
-		// Check if there are any existing releases
-		existing, _, err := s.releaseRepo.ListByPluginID(ctx, req.PluginID, 1, 0)
-		if err == nil && len(existing) == 0 {
-			req.IsLatest = true
-		}
+	// The first release is always latest, even when the client omits is_latest.
+	existingReleases, _, err := s.releaseRepo.ListByPluginID(ctx, req.PluginID, 1, 0)
+	if err != nil {
+		return nil, fmt.Errorf("failed to list existing releases: %w", err)
+	}
+	if len(existingReleases) == 0 {
+		req.IsLatest = true
 	}
 
 	rel := &plugin.Release{

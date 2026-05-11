@@ -48,6 +48,26 @@ services:
           -s registrationAllowed=true \
           -s resetPasswordAllowed=true \
           -s loginWithEmailAllowed=true
+        /opt/keycloak/bin/kcadm.sh get roles/market_admin \
+          -r k8s-manager >/dev/null 2>&1 || \
+          /opt/keycloak/bin/kcadm.sh create roles \
+            -r k8s-manager \
+            -s name=market_admin \
+            -s 'description=Can moderate plugins and manage all market resources'
+        /opt/keycloak/bin/kcadm.sh get roles/market_publisher \
+          -r k8s-manager >/dev/null 2>&1 || \
+          /opt/keycloak/bin/kcadm.sh create roles \
+            -r k8s-manager \
+            -s name=market_publisher \
+            -s 'description=Can register plugins and publish releases'
+        /opt/keycloak/bin/kcadm.sh add-roles \
+          -r k8s-manager \
+          --uusername demo \
+          --rolename market_admin >/dev/null 2>&1 || true
+        /opt/keycloak/bin/kcadm.sh add-roles \
+          -r k8s-manager \
+          --uusername demo \
+          --rolename market_publisher >/dev/null 2>&1 || true
 
   minio:
     image: quay.io/minio/minio:latest

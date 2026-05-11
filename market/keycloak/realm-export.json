@@ -5,6 +5,18 @@
   "loginWithEmailAllowed": true,
   "registrationAllowed": true,
   "resetPasswordAllowed": true,
+  "roles": {
+    "realm": [
+      {
+        "name": "market_admin",
+        "description": "Can moderate plugins and manage all market resources"
+      },
+      {
+        "name": "market_publisher",
+        "description": "Can register plugins and publish releases"
+      }
+    ]
+  },
   "clients": [
     {
       "clientId": "k8s-manager-cli",
@@ -42,6 +54,10 @@
           "value": "demo123",
           "temporary": false
         }
+      ],
+      "realmRoles": [
+        "market_admin",
+        "market_publisher"
       ]
     }
   ]

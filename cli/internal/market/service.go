@@ -16,6 +16,7 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/metadata"
+	"google.golang.org/grpc/status"
 )
 
 const defaultAddress = "localhost:8080"
@@ -119,7 +120,7 @@ func (s *Service) ListPlugins(ctx context.Context, query string) (*PluginList, e
 	if query == "" {
 		resp, err := client.ListInstalledPlugins(ctx, &marketv1.ListInstalledPluginsRequest{Limit: 50})
 		if err != nil {
-			return nil, fmt.Errorf("list installed plugins: %w", err)
+			return nil, rpcError("list installed plugins", err)
 		}
 
 		items := make([]PluginSummary, 0, len(resp.InstalledPlugins))
@@ -143,7 +144,7 @@ func (s *Service) ListPlugins(ctx context.Context, query string) (*PluginList, e
 		Limit:  50,
 	})
 	if err != nil {
-		return nil, fmt.Errorf("search plugins: %w", err)
+		return nil, rpcError("search plugins", err)
 	}
 
 	items := make([]PluginSummary, 0, len(resp.Plugins))
@@ -154,7 +155,7 @@ func (s *Service) ListPlugins(ctx context.Context, query string) (*PluginList, e
 	// Подгружаем библиотеку пользователя и склеиваем с результатами поиска
 	installedResp, err := client.ListInstalledPlugins(ctx, &marketv1.ListInstalledPluginsRequest{Limit: 100})
 	if err != nil {
-		return nil, fmt.Errorf("list installed plugins: %w", err)
+		return nil, rpcError("list installed plugins", err)
 	}
 	installedAtByID := make(map[int64]string, len(installedResp.InstalledPlugins))
 	for _, installed := range installedResp.InstalledPlugins {
@@ -186,7 +187,7 @@ func (s *Service) InstallPlugin(ctx context.Context, pluginID int64) (*PluginSum
 
 	resp, err := client.InstallPlugin(ctx, &marketv1.InstallPluginRequest{PluginId: pluginID})
 	if err != nil {
-		return nil, fmt.Errorf("install plugin: %w", err)
+		return nil, rpcError("install plugin", err)
 	}
 	if resp.InstalledPlugin == nil {
 		return nil, fmt.Errorf("install plugin returned empty response")
@@ -207,7 +208,7 @@ func (s *Service) UninstallPlugin(ctx context.Context, pluginID int64) error {
 	client := marketv1.NewPluginServiceClient(conn)
 
 	if _, err := client.UninstallPlugin(ctx, &marketv1.UninstallPluginRequest{PluginId: pluginID}); err != nil {
-		return fmt.Errorf("uninstall plugin: %w", err)
+		return rpcError("uninstall plugin", err)
 	}
 
 	return nil
@@ -262,7 +263,7 @@ func (s *Service) CreateDeveloperPlugin(ctx context.Context, draft DeveloperPlug
 		Name: draft.PublisherName,
 	})
 	if err != nil {
-		return nil, fmt.Errorf("create publisher: %w", err)
+		return nil, rpcError("create publisher", err)
 	}
 	if publisherResp.Publisher == nil {
 		return nil, fmt.Errorf("create publisher returned empty response")
@@ -277,7 +278,7 @@ func (s *Service) CreateDeveloperPlugin(ctx context.Context, draft DeveloperPlug
 		TrustStatus: marketv1.TrustStatus_TRUST_STATUS_COMMUNITY,
 	})
 	if err != nil {
-		return nil, fmt.Errorf("create plugin: %w", err)
+		return nil, rpcError("create plugin", err)
 	}
 	if pluginResp.Plugin == nil {
 		return nil, fmt.Errorf("create plugin returned empty response")
@@ -289,7 +290,7 @@ func (s *Service) CreateDeveloperPlugin(ctx context.Context, draft DeveloperPlug
 		IsLatest: true,
 	})
 	if err != nil {
-		return nil, fmt.Errorf("create release: %w", err)
+		return nil, rpcError("create release", err)
 	}
 	if releaseResp.Release == nil {
 		return nil, fmt.Errorf("create release returned empty response")
@@ -336,7 +337,7 @@ func uploadArtifact(ctx context.Context, client marketv1.PluginServiceClient, re
 
 	stream, err := client.UploadArtifact(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("start artifact upload: %w", err)
+		return nil, rpcError("start artifact upload", err)
 	}
 
 	if err := stream.Send(&marketv1.UploadArtifactRequest{
@@ -350,7 +351,7 @@ func uploadArtifact(ctx context.Context, client marketv1.PluginServiceClient, re
 			},
 		},
 	}); err != nil {
-		return nil, fmt.Errorf("send artifact metadata: %w", err)
+		return nil, rpcError("send artifact metadata", err)
 	}
 
 	buf := make([]byte, 64*1024)
@@ -360,7 +361,7 @@ func uploadArtifact(ctx context.Context, client marketv1.PluginServiceClient, re
 			if sendErr := stream.Send(&marketv1.UploadArtifactRequest{
 				Data: &marketv1.UploadArtifactRequest_Chunk{Chunk: buf[:n]},
 			}); sendErr != nil {
-				return nil, fmt.Errorf("send artifact chunk: %w", sendErr)
+				return nil, rpcError("send artifact chunk", sendErr)
 			}
 		}
 		if err == io.EOF {
@@ -373,7 +374,7 @@ func uploadArtifact(ctx context.Context, client marketv1.PluginServiceClient, re
 
 	resp, err := stream.CloseAndRecv()
 	if err != nil {
-		return nil, fmt.Errorf("finish artifact upload: %w", err)
+		return nil, rpcError("finish artifact upload", err)
 	}
 	if resp.Artifact == nil {
 		return nil, fmt.Errorf("artifact upload returned empty response")
@@ -428,4 +429,16 @@ func pluginSummary(plugin *marketv1.Plugin) PluginSummary {
 		TrustStatus: strings.TrimPrefix(plugin.TrustStatus.String(), "TRUST_STATUS_"),
 		Status:      strings.TrimPrefix(plugin.Status.String(), "PLUGIN_STATUS_"),
 	}
+}
+
+func rpcError(operation string, err error) error {
+	if err == nil {
+		return nil
+	}
+	st, ok := status.FromError(err)
+	if !ok {
+		return fmt.Errorf("%s: %w", operation, err)
+	}
+
+	return fmt.Errorf("%s: %s (%s)", operation, st.Message(), st.Code())
 }
