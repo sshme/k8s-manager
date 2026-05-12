@@ -37,11 +37,11 @@ var (
 		BorderForeground(ColorBorder)
 
 	SelectedItem = lipgloss.NewStyle().
-		Bold(true).
-		Foreground(ColorTeal)
+			Bold(true).
+			Foreground(ColorTeal)
 
 	NormalItem = lipgloss.NewStyle().
-		Foreground(ColorMuted)
+			Foreground(ColorMuted)
 
 	Title = lipgloss.NewStyle().
 		Bold(true).
@@ -54,10 +54,10 @@ var (
 		Foreground(ColorBlue)
 
 	ActiveButton = lipgloss.NewStyle().
-		Bold(true).
-		Foreground(lipgloss.Color("#0B1220")).
-		Background(ColorTeal).
-		Padding(0, 1)
+			Bold(true).
+			Foreground(lipgloss.Color("#0B1220")).
+			Background(ColorTeal).
+			Padding(0, 1)
 
 	Button = lipgloss.NewStyle().
 		Foreground(ColorInk).
@@ -65,14 +65,50 @@ var (
 		Padding(0, 1)
 
 	Installed = lipgloss.NewStyle().
-		Bold(true).
-		Foreground(lipgloss.Color("#102015")).
-		Background(ColorGreen).
-		Padding(0, 1)
+			Bold(true).
+			Foreground(lipgloss.Color("#102015")).
+			Background(ColorGreen).
+			Padding(0, 1)
 
 	Warning = lipgloss.NewStyle().
 		Foreground(ColorAmber)
 
 	Danger = lipgloss.NewStyle().
 		Foreground(ColorRose)
+
+	Card = lipgloss.NewStyle().
+		Border(lipgloss.RoundedBorder()).
+		BorderForeground(ColorBorder).
+		Padding(0, 1).
+		Foreground(ColorInk)
+
+	SelectedCard = lipgloss.NewStyle().
+			Border(lipgloss.RoundedBorder()).
+			BorderForeground(ColorTeal).
+			Background(ColorPanelAlt).
+			Padding(0, 1).
+			Foreground(ColorInk).
+			Bold(true)
+
+	Verified = lipgloss.NewStyle().
+			Bold(true).
+			Foreground(lipgloss.Color("#0B1220")).
+			Background(ColorBlue).
+			Padding(0, 1)
+
+	Official = lipgloss.NewStyle().
+			Bold(true).
+			Foreground(lipgloss.Color("#0B1220")).
+			Background(ColorAmber).
+			Padding(0, 1)
+
+	SearchBox = lipgloss.NewStyle().
+			Border(lipgloss.RoundedBorder()).
+			BorderForeground(ColorBorder).
+			Padding(0, 1)
+
+	SearchBoxFocused = lipgloss.NewStyle().
+				Border(lipgloss.RoundedBorder()).
+				BorderForeground(ColorTeal).
+				Padding(0, 1)
 )

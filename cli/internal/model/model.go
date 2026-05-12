@@ -16,7 +16,7 @@ type model struct {
 
 	tabs    []tabs.Tab
 	active  int
-	plugins *plugins.PluginsTab // для роутинга в command-mode
+	plugins *plugins.Tab        // для роутинга в command-mode
 	profile *profile.ProfileTab // роутинга в command-mode и хедера
 
 	status       string

@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+	"sync"
 
 	"k8s-manager/cli/internal/auth"
 	marketv1 "k8s-manager/proto/gen/v1/market"
@@ -41,27 +42,68 @@ func LoadConfig() Config {
 type Service struct {
 	cfg         Config
 	authService *auth.Service
+
+	// Кэш publisher_id -> имя. Издателей мало и они редко меняются,
+	// поэтому держим простой in-memory кэш на время жизни процесса
+	publisherCacheMu sync.Mutex
+	publisherCache   map[int64]string
 }
 
 func NewService(cfg Config, authService *auth.Service) *Service {
 	return &Service{
-		cfg:         cfg,
-		authService: authService,
+		cfg:            cfg,
+		authService:    authService,
+		publisherCache: make(map[int64]string),
 	}
 }
 
 // PluginSummary - представление marketv1.Plugin, удобное для
 // TUI. Без enum-префиксов и с флагами про установку
 type PluginSummary struct {
-	ID          int64
-	Identifier  string
-	Name        string
-	Description string
-	Category    string
-	TrustStatus string
-	Status      string
-	InstalledAt string
-	Installed   bool
+	ID            int64
+	Identifier    string
+	Name          string
+	Description   string
+	Category      string
+	PublisherID   int64
+	PublisherName string // подмешивается через кэш в ListPlugins
+	TrustStatus   string
+	Status        string
+	InstalledAt   string
+	Installed     bool
+}
+
+// PluginDetails - расширенная инфо о плагине, нужна детальной странице.
+// Содержит всё, что есть в Summary, плюс ссылки и таймстампы
+type PluginDetails struct {
+	PluginSummary
+	SourceURL string
+	DocsURL   string
+	CreatedAt string
+	UpdatedAt string
+}
+
+// Release - один релиз плагина (версия). Артефакты привязаны к релизу
+type Release struct {
+	ID            int64
+	PluginID      int64
+	Version       string
+	PublishedAt   string
+	Changelog     string
+	MinCLIVersion string
+	MinK8sVersion string
+	IsLatest      bool
+}
+
+// Artifact - бинарник под конкретную платформу одного релиза
+type Artifact struct {
+	ID        int64
+	ReleaseID int64
+	OS        string
+	Arch      string
+	Type      string
+	Size      int64
+	Checksum  string
 }
 
 // PluginList - результат ListPlugins. Total приходит от сервера и может
@@ -69,7 +111,7 @@ type PluginSummary struct {
 type PluginList struct {
 	Items     []PluginSummary
 	Total     int64
-	Installed bool // true если это срез "мои установленные", а не результат поиска
+	Installed bool // true если это добавленные в библиотеку (при пустом запросе), а не результат поиска
 }
 
 // UploadedArtifact - ответ сервера после успешного стрим-аплоада
@@ -130,6 +172,7 @@ func (s *Service) ListPlugins(ctx context.Context, query string) (*PluginList, e
 			item.Installed = true
 			items = append(items, item)
 		}
+		s.fillPublisherNames(ctx, conn, items)
 
 		return &PluginList{
 			Items:     items,
@@ -168,11 +211,90 @@ func (s *Service) ListPlugins(ctx context.Context, query string) (*PluginList, e
 		items[i].Installed = installed
 		items[i].InstalledAt = installedAt
 	}
+	s.fillPublisherNames(ctx, conn, items)
 
 	return &PluginList{
 		Items: items,
 		Total: resp.Total,
 	}, nil
+}
+
+// GetPlugin возвращает расширенную инфо о плагине для детальной страницы
+func (s *Service) GetPlugin(ctx context.Context, pluginID int64) (*PluginDetails, error) {
+	conn, ctx, closeClient, err := s.connect(ctx)
+	if err != nil {
+		return nil, err
+	}
+	defer closeClient()
+
+	pluginClient := marketv1.NewPluginServiceClient(conn)
+	resp, err := pluginClient.GetPlugin(ctx, &marketv1.GetPluginRequest{Id: pluginID})
+	if err != nil {
+		return nil, fmt.Errorf("get plugin: %w", err)
+	}
+	if resp.Plugin == nil {
+		return nil, fmt.Errorf("get plugin returned empty response")
+	}
+
+	details := &PluginDetails{
+		PluginSummary: pluginSummary(resp.Plugin),
+		SourceURL:     resp.Plugin.SourceUrl,
+		DocsURL:       resp.Plugin.DocsUrl,
+		CreatedAt:     resp.Plugin.CreatedAt,
+		UpdatedAt:     resp.Plugin.UpdatedAt,
+	}
+
+	// Подтягиваем имя издателя из кэша (или сходим за ним один раз)
+	if name, ok := s.publisherName(ctx, conn, details.PublisherID); ok {
+		details.PublisherName = name
+	}
+
+	return details, nil
+}
+
+// ListReleases возвращает релизы плагина, отсортированные сервером
+func (s *Service) ListReleases(ctx context.Context, pluginID int64) ([]Release, error) {
+	conn, ctx, closeClient, err := s.connect(ctx)
+	if err != nil {
+		return nil, err
+	}
+	defer closeClient()
+
+	client := marketv1.NewPluginServiceClient(conn)
+	resp, err := client.ListReleases(ctx, &marketv1.ListReleasesRequest{
+		PluginId: pluginID,
+		Limit:    50,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("list releases: %w", err)
+	}
+
+	out := make([]Release, 0, len(resp.Releases))
+	for _, r := range resp.Releases {
+		out = append(out, toRelease(r))
+	}
+	return out, nil
+}
+
+// ListArtifacts возвращает артефакты конкретного релиза (по одному на платформу)
+func (s *Service) ListArtifacts(ctx context.Context, releaseID int64) ([]Artifact, error) {
+	conn, ctx, closeClient, err := s.connect(ctx)
+	if err != nil {
+		return nil, err
+	}
+	defer closeClient()
+
+	client := marketv1.NewPluginServiceClient(conn)
+	resp, err := client.ListArtifacts(ctx, &marketv1.ListArtifactsRequest{ReleaseId: releaseID})
+	if err != nil {
+		return nil, fmt.Errorf("list artifacts: %w", err)
+	}
+
+	out := make([]Artifact, 0, len(resp.Artifacts))
+	for _, a := range resp.Artifacts {
+		out = append(out, toArtifact(a))
+	}
+	return out, nil
 }
 
 // InstallPlugin добавляет плагин в библиотеку пользователя. Сервер
@@ -413,6 +535,107 @@ func (s *Service) connect(ctx context.Context) (*grpc.ClientConn, context.Contex
 	return conn, ctx, func() { _ = conn.Close() }, nil
 }
 
+// toRelease конвертирует protobuf-релиз в локальный тип
+func toRelease(r *marketv1.Release) Release {
+	if r == nil {
+		return Release{}
+	}
+	return Release{
+		ID:            r.Id,
+		PluginID:      r.PluginId,
+		Version:       r.Version,
+		PublishedAt:   r.PublishedAt,
+		Changelog:     r.Changelog,
+		MinCLIVersion: r.MinCliVersion,
+		MinK8sVersion: r.MinK8SVersion,
+		IsLatest:      r.IsLatest,
+	}
+}
+
+// toArtifact конвертирует protobuf-артефакт в локальный тип
+func toArtifact(a *marketv1.Artifact) Artifact {
+	if a == nil {
+		return Artifact{}
+	}
+	return Artifact{
+		ID:        a.Id,
+		ReleaseID: a.ReleaseId,
+		OS:        a.Os,
+		Arch:      a.Arch,
+		Type:      a.Type,
+		Size:      a.Size,
+		Checksum:  a.Checksum,
+	}
+}
+
+// fillPublisherNames проставляет PublisherName в каждом элементе списка,
+// используя существующее соединение. При ошибке тихо оставляет имена пустыми -
+// поле опциональное, лучше показать список без издателей чем уронить запрос
+func (s *Service) fillPublisherNames(ctx context.Context, conn *grpc.ClientConn, items []PluginSummary) {
+	if len(items) == 0 {
+		return
+	}
+
+	// Собираем уникальные id, которых ещё нет в кэше
+	s.publisherCacheMu.Lock()
+	missing := make(map[int64]struct{})
+	for _, item := range items {
+		if item.PublisherID == 0 {
+			continue
+		}
+		if _, ok := s.publisherCache[item.PublisherID]; !ok {
+			missing[item.PublisherID] = struct{}{}
+		}
+	}
+	s.publisherCacheMu.Unlock()
+
+	if len(missing) > 0 {
+		client := marketv1.NewPublisherServiceClient(conn)
+		resp, err := client.ListPublishers(ctx, &marketv1.ListPublishersRequest{Limit: 200})
+		if err == nil && resp != nil {
+			s.publisherCacheMu.Lock()
+			for _, p := range resp.Publishers {
+				s.publisherCache[p.Id] = p.Name
+			}
+			s.publisherCacheMu.Unlock()
+		}
+	}
+
+	// Проставляем имена из кэша
+	s.publisherCacheMu.Lock()
+	defer s.publisherCacheMu.Unlock()
+	for i := range items {
+		if name, ok := s.publisherCache[items[i].PublisherID]; ok {
+			items[i].PublisherName = name
+		}
+	}
+}
+
+// publisherName возвращает имя издателя из кэша или дёргает сервер если в кэше нет
+func (s *Service) publisherName(ctx context.Context, conn *grpc.ClientConn, publisherID int64) (string, bool) {
+	if publisherID == 0 {
+		return "", false
+	}
+
+	s.publisherCacheMu.Lock()
+	if name, ok := s.publisherCache[publisherID]; ok {
+		s.publisherCacheMu.Unlock()
+		return name, true
+	}
+	s.publisherCacheMu.Unlock()
+
+	client := marketv1.NewPublisherServiceClient(conn)
+	resp, err := client.GetPublisher(ctx, &marketv1.GetPublisherRequest{Id: publisherID})
+	if err != nil || resp == nil || resp.Publisher == nil {
+		return "", false
+	}
+
+	s.publisherCacheMu.Lock()
+	s.publisherCache[publisherID] = resp.Publisher.Name
+	s.publisherCacheMu.Unlock()
+	return resp.Publisher.Name, true
+}
+
 // pluginSummary конвертирует marketv1.Plugin в PluginSummary.
 // Удаляет enum-префиксы.
 func pluginSummary(plugin *marketv1.Plugin) PluginSummary {
@@ -426,6 +649,7 @@ func pluginSummary(plugin *marketv1.Plugin) PluginSummary {
 		Name:        plugin.Name,
 		Description: plugin.Description,
 		Category:    plugin.Category,
+		PublisherID: plugin.PublisherId,
 		TrustStatus: strings.TrimPrefix(plugin.TrustStatus.String(), "TRUST_STATUS_"),
 		Status:      strings.TrimPrefix(plugin.Status.String(), "PLUGIN_STATUS_"),
 	}

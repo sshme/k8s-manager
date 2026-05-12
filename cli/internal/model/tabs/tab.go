@@ -7,7 +7,7 @@ import (
 )
 
 // Tab - одна рабочая панель в TUI. Главная модель хранит срез Tab
-// и роутит Bubble Tea сообщения в активный таб.
+// и роутит Bubble Tea сообщения в активную вкладку.
 type Tab interface {
 	Title() string
 	Init() tea.Cmd
@@ -19,8 +19,8 @@ type Tab interface {
 	CapturingInput() bool
 }
 
-// StatusMsg обновляет глобальную строку статуса. Табы возвращают SetStatus(...)
-// как Cmd; главная модель перехватывает StatusMsg и пишет в m.status.
+// StatusMsg обновляет глобальную строку статуса. Табы возвращают SetStatus
+// как Cmd. Главная модель перехватывает StatusMsg и пишет в свой статус бар.
 type StatusMsg string
 
 // SetStatus - вспомогательный Cmd, который эмитирует StatusMsg.

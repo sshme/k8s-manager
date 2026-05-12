@@ -284,7 +284,7 @@ func (s *Service) providerConfig(ctx context.Context) (*oidc.Provider, *oauth2.C
 	return provider, oauthCfg, nil
 }
 
-// refreshSession обменивает refresh_token на новую пару токенов
+// refreshSession принудительно обменивает refresh_token на новую пару токенов
 func (s *Service) refreshSession(ctx context.Context, session *Session) (*Session, error) {
 	if session == nil || session.RefreshToken == "" {
 		return nil, ErrSessionNotFound
@@ -299,7 +299,11 @@ func (s *Service) refreshSession(ctx context.Context, session *Session) (*Sessio
 		AccessToken:  session.AccessToken,
 		RefreshToken: session.RefreshToken,
 		TokenType:    session.TokenType,
-		Expiry:       session.Expiry,
+
+		// Во избежание непредвиденного поведения, принудительно
+		// делаем токен как будто истекшим, потому что в golang.org/x/oauth2
+		// использует собственное значение delta для проверки свежести токена
+		Expiry: time.Now().Add(-1 * time.Second),
 	}
 
 	refreshed, err := oauthCfg.TokenSource(ctx, token).Token()

@@ -17,8 +17,6 @@ func (m model) View() string {
 
 	headerFrameW, _ := styles.Header.GetFrameSize()
 	footerFrameW, _ := styles.Footer.GetFrameSize()
-	sidebarFrameW, sidebarFrameH := styles.Sidebar.GetFrameSize()
-	contentFrameW, contentFrameH := styles.Content.GetFrameSize()
 
 	header := styles.Header.
 		Width(max(0, m.width-headerFrameW)).
@@ -35,17 +33,11 @@ func (m model) View() string {
 	sidebarWidth := 18
 	contentWidth := max(m.width-sidebarWidth, 20)
 
-	sidebar := styles.Sidebar.
-		Width(max(0, sidebarWidth-sidebarFrameW)).
-		Height(max(0, bodyHeight-sidebarFrameH)).
-		Render(m.renderSidebar())
-
-	bodyWidth := max(0, contentWidth-contentFrameW)
-	bodyInnerHeight := max(0, bodyHeight-contentFrameH)
-	body := styles.Content.
-		Width(bodyWidth).
-		Height(bodyInnerHeight).
-		Render(m.tabs[m.active].View(bodyWidth, bodyInnerHeight))
+	sidebar := sizedBlock(styles.Sidebar, sidebarWidth, bodyHeight, m.renderSidebar())
+	body := sizedBlock(styles.Content, contentWidth, bodyHeight, m.tabs[m.active].View(
+		max(0, contentWidth-styles.Content.GetHorizontalFrameSize()),
+		max(0, bodyHeight-styles.Content.GetVerticalFrameSize()),
+	))
 
 	return lipgloss.JoinVertical(
 		lipgloss.Left,
@@ -114,4 +106,12 @@ func (m model) profileLabel() string {
 		return ""
 	}
 	return session.DisplayName()
+}
+
+// sizedBlock рендерит content с заданной outer-шириной и высотой
+func sizedBlock(s lipgloss.Style, outerW, outerH int, content string) string {
+	return s.
+		Width(max(0, outerW-s.GetHorizontalBorderSize())).
+		Height(max(0, outerH-s.GetVerticalBorderSize())).
+		Render(content)
 }
