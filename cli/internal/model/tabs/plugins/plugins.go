@@ -11,6 +11,9 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 )
 
+// Msg - интерфейс для сообщений вкладки Plugins
+type Msg = shared.Msg
+
 // screenKind - какой экран сейчас видит пользователь. Wizard отрисовывается
 // поверх list или detail и имеет приоритет, поэтому отдельным screen не считается
 type screenKind int

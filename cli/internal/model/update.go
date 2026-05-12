@@ -2,6 +2,7 @@ package model
 
 import (
 	"k8s-manager/cli/internal/model/tabs"
+	"k8s-manager/cli/internal/model/tabs/plugins"
 	"k8s-manager/cli/internal/model/tabs/profile"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -26,6 +27,9 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// SessionLoaded, AuthCompleted, LogoutCompleted) всегда
 		// идут в ProfileTab, независимо от того, какая вкладка сейчас активна.
 		return m.delegateToProfile(msg)
+
+	case plugins.Msg:
+		return m.delegateToPlugins(msg)
 
 	case tea.KeyMsg:
 		if m.commandMode {
@@ -81,6 +85,13 @@ func (m model) delegateToActive(msg tea.Msg) (tea.Model, tea.Cmd) {
 // зависимости от текущей активной вкладки.
 func (m model) delegateToProfile(msg tea.Msg) (tea.Model, tea.Cmd) {
 	_, cmd := m.profile.Update(msg)
+	return m, cmd
+}
+
+// delegateToPlugins отправляет сообщение конкретно во вкладку Plugins, вне
+// зависимости от текущей активной вкладки
+func (m model) delegateToPlugins(msg tea.Msg) (tea.Model, tea.Cmd) {
+	_, cmd := m.plugins.Update(msg)
 	return m, cmd
 }
 

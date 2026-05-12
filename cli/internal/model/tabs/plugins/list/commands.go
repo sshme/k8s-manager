@@ -16,6 +16,8 @@ type loadedMsg struct {
 	err  error
 }
 
+func (loadedMsg) PluginMsg() {}
+
 // loadCmd обращается к сервису маркетплейса за списком плагинов.
 // После ответа от маркетплейса возвращает loadedMsg со списком
 // плагинов.

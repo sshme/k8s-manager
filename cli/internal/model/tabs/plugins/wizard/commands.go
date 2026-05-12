@@ -16,6 +16,8 @@ type CreatedMsg struct {
 	Err    error
 }
 
+func (CreatedMsg) PluginMsg() {}
+
 func createCmd(svc *market.Service, draft market.DeveloperPluginDraft) tea.Cmd {
 	return func() tea.Msg {
 		if svc == nil {

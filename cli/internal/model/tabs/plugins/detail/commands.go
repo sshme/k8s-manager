@@ -31,6 +31,11 @@ type libraryActionMsg struct {
 	err       error
 }
 
+func (pluginLoadedMsg) PluginMsg()    {}
+func (releasesLoadedMsg) PluginMsg()  {}
+func (artifactsLoadedMsg) PluginMsg() {}
+func (libraryActionMsg) PluginMsg()   {}
+
 func loadPluginCmd(svc *market.Service, pluginID int64) tea.Cmd {
 	return func() tea.Msg {
 		if svc == nil {
