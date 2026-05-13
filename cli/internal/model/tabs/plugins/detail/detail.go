@@ -7,6 +7,7 @@ import (
 	"k8s-manager/cli/internal/market"
 	"k8s-manager/cli/internal/model/tabs"
 	"k8s-manager/cli/internal/model/tabs/plugins/shared"
+	pluginsmgr "k8s-manager/cli/internal/plugins"
 
 	tea "github.com/charmbracelet/bubbletea"
 )
@@ -30,7 +31,8 @@ const (
 
 // Model - состояние детальной страницы
 type Model struct {
-	market *market.Service
+	market  *market.Service
+	plugins *pluginsmgr.Manager
 
 	summary market.PluginSummary
 
@@ -53,9 +55,10 @@ type Model struct {
 }
 
 // New создаёт модель и возвращает Cmd для параллельной загрузки plugin/releases
-func New(svc *market.Service, summary market.PluginSummary) (Model, tea.Cmd) {
+func New(svc *market.Service, mgr *pluginsmgr.Manager, summary market.PluginSummary) (Model, tea.Cmd) {
 	m := Model{
 		market:          svc,
+		plugins:         mgr,
 		summary:         summary,
 		focus:           focusButtons,
 		loadingPlugin:   true,
@@ -94,6 +97,9 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 
 	case libraryActionMsg:
 		return m.handleLibraryAction(msg)
+
+	case artifactDownloadedMsg:
+		return m.handleArtifactDownloaded(msg)
 	}
 	return m, nil
 }
@@ -152,6 +158,19 @@ func (m Model) handleLibraryAction(msg libraryActionMsg) (Model, tea.Cmd) {
 		tabs.SetStatus(verb+" library: "+m.summary.Name),
 		notify,
 	)
+}
+
+// handleArtifactDownloaded реагирует на завершение Install в plugins.Manager.
+// При успехе сообщает статус и где лежит, при ошибке выводит причину
+func (m Model) handleArtifactDownloaded(msg artifactDownloadedMsg) (Model, tea.Cmd) {
+	m.actionInProgress = false
+	if msg.err != nil {
+		return m, tabs.SetStatus("Artifact download failed: " + msg.err.Error())
+	}
+	if msg.installed == nil {
+		return m, tabs.SetStatus("Artifact downloaded")
+	}
+	return m, tabs.SetStatus("Artifact installed locally: " + msg.installed.InstallDir)
 }
 
 // pickLatestRelease возвращает индекс релиза с IsLatest=true, иначе 0

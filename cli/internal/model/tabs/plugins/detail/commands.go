@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"k8s-manager/cli/internal/market"
+	pluginsmgr "k8s-manager/cli/internal/plugins"
 
 	tea "github.com/charmbracelet/bubbletea"
 )
@@ -31,10 +32,18 @@ type libraryActionMsg struct {
 	err       error
 }
 
-func (pluginLoadedMsg) PluginMsg()    {}
-func (releasesLoadedMsg) PluginMsg()  {}
-func (artifactsLoadedMsg) PluginMsg() {}
-func (libraryActionMsg) PluginMsg()   {}
+// artifactDownloadedMsg - результат скачивания и распаковки артефакта.
+// installed заполняется только при успехе
+type artifactDownloadedMsg struct {
+	installed *pluginsmgr.InstalledArtifact
+	err       error
+}
+
+func (pluginLoadedMsg) PluginMsg()       {}
+func (releasesLoadedMsg) PluginMsg()     {}
+func (artifactsLoadedMsg) PluginMsg()    {}
+func (libraryActionMsg) PluginMsg()      {}
+func (artifactDownloadedMsg) PluginMsg() {}
 
 func loadPluginCmd(svc *market.Service, pluginID int64) tea.Cmd {
 	return func() tea.Msg {
@@ -97,5 +106,20 @@ func removeFromLibraryCmd(svc *market.Service, pluginID int64) tea.Cmd {
 			return libraryActionMsg{err: err}
 		}
 		return libraryActionMsg{installed: false}
+	}
+}
+
+// downloadArtifactCmd запускает скачивание и распаковку через plugins.Manager.
+// Таймаут 5 минут.
+func downloadArtifactCmd(mgr *pluginsmgr.Manager, ref pluginsmgr.InstallRef) tea.Cmd {
+	return func() tea.Msg {
+		if mgr == nil {
+			return artifactDownloadedMsg{err: fmt.Errorf("plugins manager is not configured")}
+		}
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
+		defer cancel()
+
+		installed, err := mgr.Install(ctx, ref)
+		return artifactDownloadedMsg{installed: installed, err: err}
 	}
 }

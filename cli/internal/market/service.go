@@ -336,6 +336,45 @@ func (s *Service) UninstallPlugin(ctx context.Context, pluginID int64) error {
 	return nil
 }
 
+// DownloadArtifact стримит байты артефакта в w и возвращает количество скачанных байт.
+// Верификация checksum и размера лежит на вызывающей стороне.
+func (s *Service) DownloadArtifact(ctx context.Context, artifactID int64, w io.Writer) (int64, error) {
+	if w == nil {
+		return 0, fmt.Errorf("download artifact: writer is required")
+	}
+
+	conn, ctx, closeClient, err := s.connect(ctx)
+	if err != nil {
+		return 0, err
+	}
+	defer closeClient()
+
+	client := marketv1.NewPluginServiceClient(conn)
+	stream, err := client.DownloadArtifact(ctx, &marketv1.DownloadArtifactRequest{Id: artifactID})
+	if err != nil {
+		return 0, rpcError("start artifact download", err)
+	}
+
+	var written int64
+	for {
+		resp, recvErr := stream.Recv()
+		if recvErr == io.EOF {
+			return written, nil
+		}
+		if recvErr != nil {
+			return written, rpcError("receive artifact chunk", recvErr)
+		}
+		if len(resp.Chunk) == 0 {
+			continue
+		}
+		n, writeErr := w.Write(resp.Chunk)
+		written += int64(n)
+		if writeErr != nil {
+			return written, fmt.Errorf("write artifact chunk: %w", writeErr)
+		}
+	}
+}
+
 // UploadArtifact заливает zip-файл по client-streaming RPC
 func (s *Service) UploadArtifact(ctx context.Context, releaseID int64, zipPath, osName, arch string) (*UploadedArtifact, error) {
 	conn, ctx, closeClient, err := s.connect(ctx)

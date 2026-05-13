@@ -7,6 +7,7 @@ import (
 	"k8s-manager/cli/internal/model/tabs/plugins/list"
 	"k8s-manager/cli/internal/model/tabs/plugins/shared"
 	"k8s-manager/cli/internal/model/tabs/plugins/wizard"
+	pluginsmgr "k8s-manager/cli/internal/plugins"
 
 	tea "github.com/charmbracelet/bubbletea"
 )
@@ -25,7 +26,8 @@ const (
 
 // Tab - модель вкладки с плагинами
 type Tab struct {
-	market *market.Service
+	market  *market.Service
+	plugins *pluginsmgr.Manager
 
 	list   list.Model
 	detail detail.Model
@@ -36,12 +38,13 @@ type Tab struct {
 }
 
 // New создаёт вкладку с инициализированным list-экраном
-func New(svc *market.Service) *Tab {
+func New(svc *market.Service, mgr *pluginsmgr.Manager) *Tab {
 	return &Tab{
-		market: svc,
-		list:   list.New(svc),
-		wizard: wizard.New(svc),
-		screen: screenList,
+		market:  svc,
+		plugins: mgr,
+		list:    list.New(svc),
+		wizard:  wizard.New(svc),
+		screen:  screenList,
 	}
 }
 
@@ -104,7 +107,7 @@ func (t *Tab) Update(msg tea.Msg) (tabs.Tab, tea.Cmd) {
 
 	case shared.OpenDetailMsg:
 		t.screen = screenDetail
-		d, cmd := detail.New(t.market, msg.Summary)
+		d, cmd := detail.New(t.market, t.plugins, msg.Summary)
 		t.detail = d.SetSize(t.width, t.height)
 		return t, cmd
 

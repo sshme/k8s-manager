@@ -6,6 +6,7 @@ import (
 	"k8s-manager/cli/internal/model/tabs"
 	"k8s-manager/cli/internal/model/tabs/plugins"
 	"k8s-manager/cli/internal/model/tabs/profile"
+	pluginsmgr "k8s-manager/cli/internal/plugins"
 
 	tea "github.com/charmbracelet/bubbletea"
 )
@@ -24,8 +25,8 @@ type model struct {
 	commandInput string
 }
 
-func New(authService *auth.Service, marketService *market.Service) model {
-	pluginsTab := plugins.New(marketService)
+func New(authService *auth.Service, marketService *market.Service, pluginsMgr *pluginsmgr.Manager) model {
+	pluginsTab := plugins.New(marketService, pluginsMgr)
 	profileTab := profile.New(authService)
 
 	return model{
