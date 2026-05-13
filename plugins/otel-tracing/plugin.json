@@ -7,7 +7,7 @@
   "description": "Настраивает выбранный Deployment на экспорт трасс OpenTelemetry по OTLP и поднимает managed Jaeger collector/UI либо подключает внешний collector endpoint.",
   "runtime": {
     "type": "exec",
-    "entrypoint": "otel-tracing"
+    "entrypoint": "cmd/otel-tracing"
   },
   "commands": [
     {
