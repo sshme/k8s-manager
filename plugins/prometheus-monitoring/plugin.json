@@ -7,7 +7,7 @@
   "description": "Автоматически подключает сбор метрик Prometheus к выбранному Deployment, настраивает Service/ServiceMonitor и поднимает managed Prometheus UI, доступный через port-forward.",
   "runtime": {
     "type": "exec",
-    "entrypoint": "prometheus-monitoring"
+    "entrypoint": "cmd/prometheus-monitoring"
   },
   "commands": [
     {
