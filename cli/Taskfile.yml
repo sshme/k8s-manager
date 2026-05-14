@@ -9,19 +9,13 @@ tasks:
       - go mod download
   build:
     cmds:
-      - go build -o bin/server ./cmd/cli
+      - go build -o bin/k8s-manager ./cmd/cli
   test:
     cmds:
       - go test ./... -v
   clean:
     cmds:
       - rm -rf bin/
-  get-test-token:
-    cmds:
-      - go run ./cmd/get-test-token
-  test:
-    cmds:
-      - go run ./cmd/test
   default:
     cmds:
       - go run ./cmd/cli
