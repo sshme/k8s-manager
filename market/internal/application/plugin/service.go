@@ -240,6 +240,12 @@ func (s *Service) UpdatePluginStatus(ctx context.Context, id int64, status plugi
 
 // UpdatePluginTrustStatus updates plugin trust status (community/verified/official)
 func (s *Service) UpdatePluginTrustStatus(ctx context.Context, id int64, trustStatus plugin.TrustStatus, reason string) error {
+	switch trustStatus {
+	case plugin.TrustStatusCommunity, plugin.TrustStatusVerified, plugin.TrustStatusOfficial:
+	default:
+		return fmt.Errorf("%w: trust_status must be community/verified/official", ErrInvalidInput)
+	}
+
 	p, err := s.pluginRepo.GetByID(ctx, id)
 	if err != nil {
 		return fmt.Errorf("failed to get plugin: %w", err)

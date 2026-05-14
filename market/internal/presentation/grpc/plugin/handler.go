@@ -272,7 +272,7 @@ func fromProtoTrustStatus(s marketv1.TrustStatus) domainplugin.TrustStatus {
 	case marketv1.TrustStatus_TRUST_STATUS_COMMUNITY:
 		return domainplugin.TrustStatusCommunity
 	default:
-		return domainplugin.TrustStatusCommunity
+		return ""
 	}
 }
 
