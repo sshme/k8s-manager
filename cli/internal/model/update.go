@@ -19,6 +19,11 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.status = string(msg)
 		return m, nil
 
+	case tabs.WorkspaceTargetMsg:
+		m.workspaceCtx = msg.Context
+		m.workspaceNS = msg.Namespace
+		return m, nil
+
 	case tabs.SessionChangedMsg:
 		// Оповещаем все вкладки об изменении сессии
 		return m, m.broadcast(msg)

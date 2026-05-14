@@ -62,10 +62,22 @@ func (m model) renderSidebar() string {
 }
 
 func (m model) renderHeader(width int) string {
-	left := styles.Title.Render("k8s-manager") + styles.Subtle.Render(" | context: dev-cluster | namespace: default")
+	left := styles.Title.Render("k8s-manager") + styles.Subtle.Render(m.workspaceTargetLabel())
 	right := components.Auth{Username: m.profileLabel()}.View()
 	padding := max(1, width-lipgloss.Width(left)-lipgloss.Width(right))
 	return left + strings.Repeat(" ", padding) + right
+}
+
+func (m model) workspaceTargetLabel() string {
+	ctx := m.workspaceCtx
+	if ctx == "" {
+		ctx = "-"
+	}
+	ns := m.workspaceNS
+	if ns == "" {
+		ns = "-"
+	}
+	return fmt.Sprintf(" | context: %s | namespace: %s", ctx, ns)
 }
 
 func (m model) renderFooter() string {

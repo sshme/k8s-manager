@@ -37,3 +37,15 @@ type SessionChangedMsg struct {
 // TabActivatedMsg приходит в таб, когда он становится активным, чтобы он
 // мог лениво обновить данные.
 type TabActivatedMsg struct{}
+
+// WorkspaceTargetMsg сообщает главной модели о текущем выборе context и namespace.
+type WorkspaceTargetMsg struct {
+	Context   string
+	Namespace string
+}
+
+func SetWorkspaceTarget(ctx, namespace string) tea.Cmd {
+	return func() tea.Msg {
+		return WorkspaceTargetMsg{Context: ctx, Namespace: namespace}
+	}
+}

@@ -6,6 +6,7 @@ import (
 	"k8s-manager/cli/internal/model/tabs"
 	"k8s-manager/cli/internal/model/tabs/plugins"
 	"k8s-manager/cli/internal/model/tabs/profile"
+	"k8s-manager/cli/internal/model/tabs/workspace"
 	pluginsmgr "k8s-manager/cli/internal/plugins"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -23,15 +24,19 @@ type model struct {
 	status       string
 	commandMode  bool
 	commandInput string
+
+	workspaceCtx string
+	workspaceNS  string
 }
 
 func New(authService *auth.Service, marketService *market.Service, pluginsMgr *pluginsmgr.Manager) model {
 	pluginsTab := plugins.New(marketService, pluginsMgr)
 	profileTab := profile.New(authService)
+	workspaceTab := workspace.New(pluginsMgr)
 
 	return model{
 		tabs: []tabs.Tab{
-			tabs.NewServices(),
+			workspaceTab,
 			pluginsTab,
 			profileTab,
 		},
