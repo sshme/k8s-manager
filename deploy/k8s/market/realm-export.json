@@ -1,0 +1,64 @@
+{
+  "realm": "k8s-manager",
+  "enabled": true,
+  "displayName": "k8s-manager",
+  "loginWithEmailAllowed": true,
+  "registrationAllowed": true,
+  "resetPasswordAllowed": true,
+  "roles": {
+    "realm": [
+      {
+        "name": "market_admin",
+        "description": "Can moderate plugins and manage all market resources"
+      },
+      {
+        "name": "market_publisher",
+        "description": "Can register plugins and publish releases"
+      }
+    ]
+  },
+  "clients": [
+    {
+      "clientId": "k8s-manager-cli",
+      "name": "k8s-manager CLI",
+      "enabled": true,
+      "protocol": "openid-connect",
+      "publicClient": true,
+      "standardFlowEnabled": true,
+      "directAccessGrantsEnabled": false,
+      "serviceAccountsEnabled": false,
+      "redirectUris": [
+        "http://127.0.0.1:18080/callback",
+        "http://localhost:18080/callback"
+      ],
+      "webOrigins": [
+        "http://127.0.0.1:18080",
+        "http://localhost:18080"
+      ],
+      "attributes": {
+        "pkce.code.challenge.method": "S256"
+      }
+    }
+  ],
+  "users": [
+    {
+      "username": "demo",
+      "enabled": true,
+      "emailVerified": true,
+      "email": "demo@k8s-manager.local",
+      "firstName": "Demo",
+      "lastName": "User",
+      "credentials": [
+        {
+          "type": "password",
+          "value": "demo123",
+          "temporary": false
+        }
+      ],
+      "realmRoles": [
+        "market_admin",
+        "market_publisher"
+      ]
+    }
+  ]
+}
