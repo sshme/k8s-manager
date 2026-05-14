@@ -47,6 +47,9 @@ func NewServer(port int, userHandler *user.Handler, pluginHandler *plugin.Handle
 		"/market.v1.PluginService/UpdatePluginStatus": {
 			RequiredRoles: []string{auth.RoleMarketAdmin},
 		},
+		"/market.v1.PluginService/UpdatePluginTrustStatus": {
+			RequiredRoles: []string{auth.RoleMarketAdmin},
+		},
 		"/market.v1.PluginService/CreateRelease": {
 			RequiredRoles: []string{auth.RoleMarketAdmin, auth.RoleMarketPublisher},
 		},

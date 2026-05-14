@@ -129,6 +129,16 @@ func (h *Handler) UpdatePluginStatus(ctx context.Context, req *marketv1.UpdatePl
 	return &marketv1.UpdatePluginStatusResponse{}, nil
 }
 
+// UpdatePluginTrustStatus handles UpdatePluginTrustStatus gRPC request
+func (h *Handler) UpdatePluginTrustStatus(ctx context.Context, req *marketv1.UpdatePluginTrustStatusRequest) (*marketv1.UpdatePluginTrustStatusResponse, error) {
+	err := h.service.UpdatePluginTrustStatus(contextWithClaimsUserID(ctx), req.Id, fromProtoTrustStatus(req.TrustStatus), req.Reason)
+	if err != nil {
+		return nil, grpcError("update plugin trust status", err)
+	}
+
+	return &marketv1.UpdatePluginTrustStatusResponse{}, nil
+}
+
 // CreateRelease handles CreateRelease gRPC request
 func (h *Handler) CreateRelease(ctx context.Context, req *marketv1.CreateReleaseRequest) (*marketv1.CreateReleaseResponse, error) {
 	createReq := &appplugin.CreateReleaseRequest{

@@ -89,7 +89,8 @@ service PluginService {
     rpc ListPlugins(ListPluginsRequest) returns (ListPluginsResponse);
     rpc UpdatePlugin(UpdatePluginRequest) returns (UpdatePluginResponse);
     rpc UpdatePluginStatus(UpdatePluginStatusRequest) returns (UpdatePluginStatusResponse);
-    
+    rpc UpdatePluginTrustStatus(UpdatePluginTrustStatusRequest) returns (UpdatePluginTrustStatusResponse);
+
     // Release management
     rpc CreateRelease(CreateReleaseRequest) returns (CreateReleaseResponse);
     rpc GetRelease(GetReleaseRequest) returns (GetReleaseResponse);
@@ -170,6 +171,15 @@ message UpdatePluginStatusRequest {
 }
 
 message UpdatePluginStatusResponse {
+}
+
+message UpdatePluginTrustStatusRequest {
+    int64       id           = 1;
+    TrustStatus trust_status = 2;
+    string      reason       = 3;
+}
+
+message UpdatePluginTrustStatusResponse {
 }
 
 // Release requests/responses

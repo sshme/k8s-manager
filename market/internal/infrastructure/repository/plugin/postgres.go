@@ -226,3 +226,25 @@ func (r *PostgresPluginRepository) UpdateStatus(ctx context.Context, id int64, s
 
 	return nil
 }
+
+// UpdateTrustStatus updates plugin trust status (community/verified/official)
+func (r *PostgresPluginRepository) UpdateTrustStatus(ctx context.Context, id int64, trustStatus plugin.TrustStatus, reason string) error {
+	query := `
+		UPDATE plugins
+		SET trust_status = $2, updated_at = NOW()
+		WHERE id = $1
+	`
+
+	_, err := r.db.ExecContext(ctx, query, id, string(trustStatus))
+	if err != nil {
+		return fmt.Errorf("failed to update plugin trust status: %w", err)
+	}
+
+	auditQuery := `
+		INSERT INTO audit_log (entity_type, entity_id, action, reason, new_value, created_at)
+		VALUES ('plugin', $1, 'trust_status_change', $2, $3, NOW())
+	`
+	_, _ = r.db.ExecContext(ctx, auditQuery, id, reason, fmt.Sprintf(`{"trust_status": "%s"}`, trustStatus))
+
+	return nil
+}

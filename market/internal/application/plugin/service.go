@@ -238,6 +238,30 @@ func (s *Service) UpdatePluginStatus(ctx context.Context, id int64, status plugi
 	return nil
 }
 
+// UpdatePluginTrustStatus updates plugin trust status (community/verified/official)
+func (s *Service) UpdatePluginTrustStatus(ctx context.Context, id int64, trustStatus plugin.TrustStatus, reason string) error {
+	p, err := s.pluginRepo.GetByID(ctx, id)
+	if err != nil {
+		return fmt.Errorf("failed to get plugin: %w", err)
+	}
+	if p == nil {
+		return ErrPluginNotFound
+	}
+
+	oldTrustStatus := string(p.TrustStatus)
+
+	if err := s.pluginRepo.UpdateTrustStatus(ctx, id, trustStatus, reason); err != nil {
+		return err
+	}
+
+	userID := s.getUserID(ctx)
+	if userID != "" {
+		s.auditService.LogStatusChange(ctx, "plugin", id, userID, reason, oldTrustStatus, string(trustStatus))
+	}
+
+	return nil
+}
+
 // CreateReleaseRequest represents a request to create a release
 type CreateReleaseRequest struct {
 	PluginID      int64

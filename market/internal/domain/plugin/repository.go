@@ -12,6 +12,7 @@ type PluginRepository interface {
 	List(ctx context.Context, filter *PluginFilter, limit, offset int) ([]*Plugin, int64, error)
 	Update(ctx context.Context, plugin *Plugin) (*Plugin, error)
 	UpdateStatus(ctx context.Context, id int64, status PluginStatus, reason string) error
+	UpdateTrustStatus(ctx context.Context, id int64, trustStatus TrustStatus, reason string) error
 }
 
 // PluginFilter represents filtering options for plugins
