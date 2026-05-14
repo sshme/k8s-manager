@@ -27,7 +27,7 @@ import (
 // Injectors from wire.go:
 
 // InitializeApp initializes the application with all dependencies
-func InitializeApp(db *sql.DB, grpcPort int, storagePath string) (*App, error) {
+func InitializeApp(db *sql.DB, grpcPort int, metricsPort MetricsPort, storagePath string) (*App, error) {
 	postgresRepository := user.NewPostgresRepository(db)
 	service := user2.NewService(postgresRepository)
 	handler := user3.NewHandler(service)
@@ -45,6 +45,6 @@ func InitializeApp(db *sql.DB, grpcPort int, storagePath string) (*App, error) {
 	}
 	pluginHandler := plugin3.NewHandler(pluginService, artifactStorage)
 	server := grpc.NewServer(grpcPort, handler, pluginHandler)
-	app := NewApp(server)
+	app := NewApp(server, metricsPort)
 	return app, nil
 }

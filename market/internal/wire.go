@@ -28,7 +28,7 @@ import (
 )
 
 // InitializeApp initializes the application with all dependencies
-func InitializeApp(db *sql.DB, grpcPort int, storagePath string) (*App, error) {
+func InitializeApp(db *sql.DB, grpcPort int, metricsPort MetricsPort, storagePath string) (*App, error) {
 	wire.Build(
 		// Repositories
 		pluginrepo.NewPostgresPluginRepository,

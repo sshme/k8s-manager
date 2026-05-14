@@ -22,6 +22,6 @@ RUN apk --no-cache add ca-certificates
 COPY --from=builder /app/market/market-service .
 COPY --from=builder /app/market/migrations ./migrations
 
-EXPOSE 50051
+EXPOSE 50051 9090
 
 CMD ["./market-service"]

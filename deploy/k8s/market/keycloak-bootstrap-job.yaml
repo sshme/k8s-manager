@@ -54,6 +54,24 @@ spec:
                   -s name=market_publisher \
                   -s 'description=Can register plugins and publish releases'
 
+              /opt/keycloak/bin/kcadm.sh get users \
+                -r k8s-manager \
+                -q username=demo \
+                --fields username | grep -q '"demo"' || \
+                /opt/keycloak/bin/kcadm.sh create users \
+                  -r k8s-manager \
+                  -s username=demo \
+                  -s enabled=true \
+                  -s emailVerified=true \
+                  -s email=demo@k8s-manager.local \
+                  -s firstName=Demo \
+                  -s lastName=User
+
+              /opt/keycloak/bin/kcadm.sh set-password \
+                -r k8s-manager \
+                --username demo \
+                --new-password demo123
+
               /opt/keycloak/bin/kcadm.sh add-roles \
                 -r k8s-manager \
                 --uusername demo \

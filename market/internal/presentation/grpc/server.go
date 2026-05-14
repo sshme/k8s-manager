@@ -1,6 +1,7 @@
 package grpc
 
 import (
+	"context"
 	"fmt"
 	"log"
 	"net"
@@ -8,11 +9,15 @@ import (
 	"os/signal"
 	"strconv"
 	"syscall"
+	"time"
 
+	"github.com/prometheus/client_golang/prometheus"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/health"
 	healthv1 "google.golang.org/grpc/health/grpc_health_v1"
 	"google.golang.org/grpc/reflection"
+	"google.golang.org/grpc/status"
 
 	authOIDC "k8s-manager/market/internal/infrastructure/auth"
 	"k8s-manager/market/internal/presentation/grpc/auth"
@@ -21,6 +26,28 @@ import (
 	marketv1 "k8s-manager/proto/gen/v1/market"
 	usersv1 "k8s-manager/proto/gen/v1/users"
 )
+
+var (
+	grpcRequestsTotal = prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "market_grpc_requests_total",
+			Help: "Total number of gRPC requests handled by market-service.",
+		},
+		[]string{"method", "code"},
+	)
+	grpcRequestDuration = prometheus.NewHistogramVec(
+		prometheus.HistogramOpts{
+			Name:    "market_grpc_request_duration_seconds",
+			Help:    "gRPC request duration in seconds for market-service.",
+			Buckets: prometheus.DefBuckets,
+		},
+		[]string{"method", "code"},
+	)
+)
+
+func init() {
+	prometheus.MustRegister(grpcRequestsTotal, grpcRequestDuration)
+}
 
 // Server wraps the gRPC server
 type Server struct {
@@ -38,7 +65,7 @@ func NewServer(port int, userHandler *user.Handler, pluginHandler *plugin.Handle
 	)
 
 	rules := map[string]auth.Rule{
-		"/grpc.health.v1.Health/Check": {Public: true},
+		"/grpc.health.v1.Health/Check":                                   {Public: true},
 		"/grpc.reflection.v1.ServerReflection/ServerReflectionInfo":      {Public: true},
 		"/grpc.reflection.v1alpha.ServerReflection/ServerReflectionInfo": {Public: true},
 		"/market.v1.PluginService/CreatePlugin": {
@@ -67,8 +94,14 @@ func NewServer(port int, userHandler *user.Handler, pluginHandler *plugin.Handle
 		},
 	}
 	grpcServer := grpc.NewServer(
-		grpc.UnaryInterceptor(auth.UnaryAuthInterceptor(rules, auth.NewOIDCTokenParser(oidcClient))),
-		grpc.StreamInterceptor(auth.StreamAuthInterceptor(rules, auth.NewOIDCTokenParser(oidcClient))),
+		grpc.ChainUnaryInterceptor(
+			metricsUnaryInterceptor,
+			auth.UnaryAuthInterceptor(rules, auth.NewOIDCTokenParser(oidcClient)),
+		),
+		grpc.ChainStreamInterceptor(
+			metricsStreamInterceptor,
+			auth.StreamAuthInterceptor(rules, auth.NewOIDCTokenParser(oidcClient)),
+		),
 	)
 	healthServer := health.NewServer()
 	healthServer.SetServingStatus("", healthv1.HealthCheckResponse_SERVING)
@@ -86,6 +119,40 @@ func NewServer(port int, userHandler *user.Handler, pluginHandler *plugin.Handle
 		grpcServer: grpcServer,
 		port:       port,
 	}
+}
+
+func metricsUnaryInterceptor(
+	ctx context.Context,
+	req any,
+	info *grpc.UnaryServerInfo,
+	handler grpc.UnaryHandler,
+) (any, error) {
+	start := time.Now()
+	resp, err := handler(ctx, req)
+	recordGRPCMetrics(info.FullMethod, err, time.Since(start))
+	return resp, err
+}
+
+func metricsStreamInterceptor(
+	srv any,
+	stream grpc.ServerStream,
+	info *grpc.StreamServerInfo,
+	handler grpc.StreamHandler,
+) error {
+	start := time.Now()
+	err := handler(srv, stream)
+	recordGRPCMetrics(info.FullMethod, err, time.Since(start))
+	return err
+}
+
+func recordGRPCMetrics(method string, err error, duration time.Duration) {
+	code := codes.OK
+	if err != nil {
+		code = status.Code(err)
+	}
+	codeLabel := code.String()
+	grpcRequestsTotal.WithLabelValues(method, codeLabel).Inc()
+	grpcRequestDuration.WithLabelValues(method, codeLabel).Observe(duration.Seconds())
 }
 
 func getEnv(key, fallback string) string {

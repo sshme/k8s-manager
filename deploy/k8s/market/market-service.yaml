@@ -21,6 +21,7 @@ spec:
       containers:
         - name: market-service
           image: 1d83e52d-nimble-crane.registry.twcstorage.ru/market/market-service:manual-test
+          imagePullPolicy: Always
           command:
             - ./market-service
           args:
@@ -31,6 +32,8 @@ spec:
           ports:
             - name: grpc
               containerPort: 8080
+            - name: metrics
+              containerPort: 9090
           envFrom:
             - configMapRef:
                 name: market-config
@@ -74,3 +77,6 @@ spec:
     - name: grpc
       port: 8080
       targetPort: grpc
+    - name: metrics
+      port: 9090
+      targetPort: metrics

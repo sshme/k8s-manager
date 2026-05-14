@@ -23,6 +23,7 @@ func main() {
 	flag.StringVar(&dbConfig.SSLMode, "db-sslmode", getEnv("DB_SSLMODE", "disable"), "Database SSL mode")
 
 	grpcPort := flag.Int("grpc-port", getEnvInt("GRPC_PORT", 50051), "gRPC server port")
+	metricsPort := flag.Int("metrics-port", getEnvInt("METRICS_PORT", 9090), "Prometheus metrics HTTP port")
 	storagePath := flag.String("storage-path", getEnv("STORAGE_PATH", "./storage"), "Artifact storage path")
 	migrationsPath := flag.String("migrations-path", getEnv("MIGRATIONS_PATH", "./migrations"), "SQL migrations directory")
 
@@ -43,7 +44,7 @@ func main() {
 	}
 	log.Println("Database migrations applied")
 
-	app, err := internal.InitializeApp(db.DB, *grpcPort, *storagePath)
+	app, err := internal.InitializeApp(db.DB, *grpcPort, internal.MetricsPort(*metricsPort), *storagePath)
 	if err != nil {
 		log.Fatalf("Failed to initialize app: %v", err)
 	}
