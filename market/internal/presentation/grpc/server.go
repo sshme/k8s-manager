@@ -12,6 +12,7 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/health"
 	healthv1 "google.golang.org/grpc/health/grpc_health_v1"
+	"google.golang.org/grpc/reflection"
 
 	authOIDC "k8s-manager/market/internal/infrastructure/auth"
 	"k8s-manager/market/internal/presentation/grpc/auth"
@@ -38,6 +39,8 @@ func NewServer(port int, userHandler *user.Handler, pluginHandler *plugin.Handle
 
 	rules := map[string]auth.Rule{
 		"/grpc.health.v1.Health/Check": {Public: true},
+		"/grpc.reflection.v1.ServerReflection/ServerReflectionInfo":      {Public: true},
+		"/grpc.reflection.v1alpha.ServerReflection/ServerReflectionInfo": {Public: true},
 		"/market.v1.PluginService/CreatePlugin": {
 			RequiredRoles: []string{auth.RoleMarketAdmin, auth.RoleMarketPublisher},
 		},
@@ -74,6 +77,7 @@ func NewServer(port int, userHandler *user.Handler, pluginHandler *plugin.Handle
 	usersv1.RegisterUserServiceServer(grpcServer, userHandler)
 	marketv1.RegisterPluginServiceServer(grpcServer, pluginHandler)
 	marketv1.RegisterPublisherServiceServer(grpcServer, pluginHandler)
+	reflection.Register(grpcServer)
 
 	return &Server{
 		grpcServer: grpcServer,
