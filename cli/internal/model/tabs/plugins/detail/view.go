@@ -211,12 +211,15 @@ func (m Model) renderChangelog(width int) string {
 	return header + "\n" + body
 }
 
-// renderButtons - три кнопки внизу. Лейблы вычисляются по текущему state
+// renderButtons - кнопки внизу. Verify видна только админам и только для
+// плагинов в статусах COMMUNITY/VERIFIED. Остальные две кнопки всегда есть
 func (m Model) renderButtons() string {
 	labels := []string{
 		m.libraryButtonLabel(),
 		m.artifactButtonLabel(),
-		m.verifyButtonLabel(),
+	}
+	if m.verifyVisible() {
+		labels = append(labels, m.verifyButtonLabel())
 	}
 	rendered := make([]string, 0, len(labels))
 	for i, label := range labels {

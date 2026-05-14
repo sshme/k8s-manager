@@ -39,11 +39,18 @@ type artifactDownloadedMsg struct {
 	err       error
 }
 
+// pluginVerifiedMsg - результат UpdatePluginTrustStatus
+type pluginVerifiedMsg struct {
+	target string
+	err    error
+}
+
 func (pluginLoadedMsg) PluginMsg()       {}
 func (releasesLoadedMsg) PluginMsg()     {}
 func (artifactsLoadedMsg) PluginMsg()    {}
 func (libraryActionMsg) PluginMsg()      {}
 func (artifactDownloadedMsg) PluginMsg() {}
+func (pluginVerifiedMsg) PluginMsg()     {}
 
 func loadPluginCmd(svc *market.Service, pluginID int64) tea.Cmd {
 	return func() tea.Msg {
@@ -106,6 +113,22 @@ func removeFromLibraryCmd(svc *market.Service, pluginID int64) tea.Cmd {
 			return libraryActionMsg{err: err}
 		}
 		return libraryActionMsg{installed: false}
+	}
+}
+
+// verifyPluginCmd дёргает UpdatePluginTrustStatus и возвращает pluginVerifiedMsg.
+// target - "VERIFIED" или "COMMUNITY".
+func verifyPluginCmd(svc *market.Service, pluginID int64, target string) tea.Cmd {
+	return func() tea.Msg {
+		if svc == nil {
+			return pluginVerifiedMsg{err: fmt.Errorf("market service is not configured")}
+		}
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+		if err := svc.UpdatePluginTrustStatus(ctx, pluginID, target); err != nil {
+			return pluginVerifiedMsg{err: err}
+		}
+		return pluginVerifiedMsg{target: target}
 	}
 }
 

@@ -320,6 +320,34 @@ func (s *Service) InstallPlugin(ctx context.Context, pluginID int64) (*PluginSum
 	return &summary, nil
 }
 
+// UpdatePluginTrustStatus меняет trust_status плагина
+func (s *Service) UpdatePluginTrustStatus(ctx context.Context, pluginID int64, target string) error {
+	var protoTrust marketv1.TrustStatus
+	switch target {
+	case "VERIFIED":
+		protoTrust = marketv1.TrustStatus_TRUST_STATUS_VERIFIED
+	case "COMMUNITY":
+		protoTrust = marketv1.TrustStatus_TRUST_STATUS_COMMUNITY
+	default:
+		return fmt.Errorf("unsupported trust status: %s", target)
+	}
+
+	conn, ctx, closeClient, err := s.connect(ctx)
+	if err != nil {
+		return err
+	}
+	defer closeClient()
+	client := marketv1.NewPluginServiceClient(conn)
+
+	if _, err := client.UpdatePluginTrustStatus(ctx, &marketv1.UpdatePluginTrustStatusRequest{
+		Id:          pluginID,
+		TrustStatus: protoTrust,
+	}); err != nil {
+		return rpcError("update plugin trust status", err)
+	}
+	return nil
+}
+
 // UninstallPlugin убирает плагин из библиотеки пользователя
 func (s *Service) UninstallPlugin(ctx context.Context, pluginID int64) error {
 	conn, ctx, closeClient, err := s.connect(ctx)

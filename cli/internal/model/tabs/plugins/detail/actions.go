@@ -19,10 +19,29 @@ func (m Model) activateButton() (Model, tea.Cmd) {
 	case btnArtifact:
 		return m.startArtifactDownload()
 	case btnVerify:
-		// TODO: Заглушка, модерация с ролью
-		return m, tabs.SetStatus("Server-side moderation is not implemented yet")
+		return m.toggleVerify()
 	}
 	return m, nil
+}
+
+// toggleVerify переключает траст статус плагина между community и verified
+func (m Model) toggleVerify() (Model, tea.Cmd) {
+	if !m.verifyVisible() {
+		return m, nil
+	}
+
+	target := "VERIFIED"
+	statusMsg := "Verifying plugin..."
+	if m.summary.TrustStatus == "VERIFIED" {
+		target = "COMMUNITY"
+		statusMsg = "Unverifying plugin..."
+	}
+
+	m.actionInProgress = true
+	return m, tea.Batch(
+		tabs.SetStatus(statusMsg),
+		verifyPluginCmd(m.market, m.summary.ID, target),
+	)
 }
 
 // startArtifactDownload запускает downloadArtifactCmd.

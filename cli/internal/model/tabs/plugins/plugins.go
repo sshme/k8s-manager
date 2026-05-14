@@ -1,6 +1,7 @@
 package plugins
 
 import (
+	"k8s-manager/cli/internal/auth"
 	"k8s-manager/cli/internal/market"
 	"k8s-manager/cli/internal/model/tabs"
 	"k8s-manager/cli/internal/model/tabs/plugins/detail"
@@ -28,6 +29,7 @@ const (
 type Tab struct {
 	market  *market.Service
 	plugins *pluginsmgr.Manager
+	session *auth.Session
 
 	list   list.Model
 	detail detail.Model
@@ -96,8 +98,12 @@ func (t *Tab) Update(msg tea.Msg) (tabs.Tab, tea.Cmd) {
 		return t, nil
 
 	case tabs.SessionChangedMsg:
+		t.session = msg.Session
 		next, cmd := t.list.SetSession(msg.Session)
 		t.list = next
+		if t.screen == screenDetail {
+			t.detail = t.detail.SetSession(msg.Session)
+		}
 		return t, cmd
 
 	case tabs.TabActivatedMsg:
@@ -107,7 +113,7 @@ func (t *Tab) Update(msg tea.Msg) (tabs.Tab, tea.Cmd) {
 
 	case shared.OpenDetailMsg:
 		t.screen = screenDetail
-		d, cmd := detail.New(t.market, t.plugins, msg.Summary)
+		d, cmd := detail.New(t.market, t.plugins, msg.Summary, t.session)
 		t.detail = d.SetSize(t.width, t.height)
 		return t, cmd
 

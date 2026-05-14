@@ -4,6 +4,7 @@ package detail
 import (
 	"runtime"
 
+	"k8s-manager/cli/internal/auth"
 	"k8s-manager/cli/internal/market"
 	"k8s-manager/cli/internal/model/tabs"
 	"k8s-manager/cli/internal/model/tabs/plugins/shared"
@@ -11,6 +12,10 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 )
+
+// adminRole - имя роли в JWT, которая разрешает менять trust_status плагина.
+// Должно совпадать с auth.RoleMarketAdmin на стороне маркета
+const adminRole = "market_admin"
 
 // focusZone - какая часть экрана сейчас принимает клавиши
 type focusZone int
@@ -33,6 +38,7 @@ const (
 type Model struct {
 	market  *market.Service
 	plugins *pluginsmgr.Manager
+	session *auth.Session
 
 	summary market.PluginSummary
 
@@ -55,10 +61,11 @@ type Model struct {
 }
 
 // New создаёт модель и возвращает Cmd для параллельной загрузки plugin/releases
-func New(svc *market.Service, mgr *pluginsmgr.Manager, summary market.PluginSummary) (Model, tea.Cmd) {
+func New(svc *market.Service, mgr *pluginsmgr.Manager, summary market.PluginSummary, session *auth.Session) (Model, tea.Cmd) {
 	m := Model{
 		market:          svc,
 		plugins:         mgr,
+		session:         session,
 		summary:         summary,
 		focus:           focusButtons,
 		loadingPlugin:   true,
@@ -75,6 +82,43 @@ func (m Model) SetSize(width, height int) Model {
 	m.width = width
 	m.height = height
 	return m
+}
+
+// SetSession обновляет сессию
+func (m Model) SetSession(s *auth.Session) Model {
+	m.session = s
+	if m.buttonCursor >= m.buttonCount() {
+		m.buttonCursor = m.buttonCount() - 1
+	}
+	return m
+}
+
+// isAdmin проверяет, есть ли в текущей сессии роль market_admin
+func (m Model) isAdmin() bool {
+	if m.session == nil {
+		return false
+	}
+	for _, r := range m.session.Roles {
+		if r == adminRole {
+			return true
+		}
+	}
+	return false
+}
+
+func (m Model) verifyVisible() bool {
+	if !m.isAdmin() {
+		return false
+	}
+	return m.summary.TrustStatus == "VERIFIED" || m.summary.TrustStatus == "COMMUNITY"
+}
+
+// buttonCount - количество видимых кнопок
+func (m Model) buttonCount() int {
+	if m.verifyVisible() {
+		return 3
+	}
+	return 2
 }
 
 // CapturingInput всгеда false, нет текстовых полей
@@ -100,8 +144,25 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 
 	case artifactDownloadedMsg:
 		return m.handleArtifactDownloaded(msg)
+
+	case pluginVerifiedMsg:
+		return m.handlePluginVerified(msg)
 	}
 	return m, nil
+}
+
+// handlePluginVerified обновляет локальный trust статус и статусную строку
+func (m Model) handlePluginVerified(msg pluginVerifiedMsg) (Model, tea.Cmd) {
+	m.actionInProgress = false
+	if msg.err != nil {
+		return m, tabs.SetStatus("Verify action failed: " + msg.err.Error())
+	}
+	m.summary.TrustStatus = msg.target
+	label := "community"
+	if msg.target == "VERIFIED" {
+		label = "verified"
+	}
+	return m, tabs.SetStatus("Plugin marked as " + label)
 }
 
 func (m Model) handlePluginLoaded(msg pluginLoadedMsg) (Model, tea.Cmd) {

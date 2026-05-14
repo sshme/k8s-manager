@@ -79,15 +79,16 @@ func (m Model) handleArchKey(msg tea.KeyMsg) (Model, tea.Cmd) {
 }
 
 func (m Model) handleButtonsKey(msg tea.KeyMsg) (Model, tea.Cmd) {
+	count := m.buttonCount()
 	switch msg.String() {
 	case "left", "h":
 		m.buttonCursor--
 		if m.buttonCursor < 0 {
-			m.buttonCursor = 2
+			m.buttonCursor = count - 1
 		}
 		return m, nil
 	case "right", "l":
-		m.buttonCursor = (m.buttonCursor + 1) % 3
+		m.buttonCursor = (m.buttonCursor + 1) % count
 		return m, nil
 	case "enter":
 		return m.activateButton()
